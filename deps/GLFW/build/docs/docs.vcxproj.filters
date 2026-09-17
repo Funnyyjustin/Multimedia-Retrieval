@@ -1,0 +1,32 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\build\docs\Doxyfile" />
+    <CustomBuild Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\build\CMakeFiles\48915c7f1baa1c3a5e77b8571d4dcb63\docs.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\main.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\news.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\quick.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\moving.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\compile.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\build.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\intro.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\context.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\monitor.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\window.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\input.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\vulkan.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\compat.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\docs\internal.md" />
+    <None Include="C:\Users\justi\Desktop\Multimedia Retrieval\Project\build\docs\CMakeFiles\docs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{864BB0E9-BBC9-396E-B556-7590D00D51E1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

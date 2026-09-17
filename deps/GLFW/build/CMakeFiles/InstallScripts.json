@@ -1,0 +1,11 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Users/justi/Desktop/Multimedia Retrieval/Project/build/cmake_install.cmake",
+		"C:/Users/justi/Desktop/Multimedia Retrieval/Project/build/src/cmake_install.cmake",
+		"C:/Users/justi/Desktop/Multimedia Retrieval/Project/build/examples/cmake_install.cmake",
+		"C:/Users/justi/Desktop/Multimedia Retrieval/Project/build/tests/cmake_install.cmake",
+		"C:/Users/justi/Desktop/Multimedia Retrieval/Project/build/docs/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
