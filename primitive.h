@@ -1,19 +1,36 @@
 #pragma once
 
 #include "vec3.h"
+#include <string>
 
 class Primitive
 {
 public:
-
 	Point3 position;
 	Vec3 normal;
+	std::vector<Point3> vertices;
+
+	Primitive(const std::vector<Point3> vertices) : vertices(vertices)
+	{
+		auto n = cross(vertices[0] - vertices[1], vertices[0] - vertices[2]);
+		normal = unit_vector(n);
+	}
+
+	void show()
+	{
+		for (int i = 0; i < vertices.size(); i++)
+		{
+			std::cout << vertices[i].show() << std::endl;
+		}
+		std::cout << std::endl;
+	}
 };
 
 
 /// <summary>
 /// Triangle is three points and normal calculated from the three points
 /// </summary>
+/*
 class Triangle : public Primitive
 {
 public:
@@ -21,6 +38,14 @@ public:
 	{
 		auto n = cross(a - b, a - c);
 		normal = unit_vector(n);
+	}
+
+	std::string show() override
+	{
+		return 
+			"     " + a.show() + "\n" +
+			"     " + b.show() + "\n" +
+			"     " + c.show() + "\n";
 	}
 
 private:
@@ -40,6 +65,17 @@ public:
 		normal = unit_vector(n);
 	}
 
+	std::string show() override
+	{
+		return 
+			"     " + a.show() + "\n" +
+			"     " + b.show() + "\n" +
+			"     " + c.show() + "\n" +
+			"     " + d.show() + "\n";
+	}
+
 private:
 	Point3 a, b, c, d;
 };
+
+*/

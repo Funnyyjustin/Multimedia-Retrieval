@@ -1,5 +1,6 @@
 #include <cmath>
 #include <ostream>
+#include <string>
 #ifndef Vec3_H
 #define Vec3_H
 
@@ -76,6 +77,11 @@ public:
 	double length_sq() const
 	{
 		return e[0] * e[0] + e[1] * e[1] + e[2] * e[2];
+	}
+
+	std::string show() 
+	{
+		return "(" + std::to_string(e[0]) + ", " + std::to_string(e[1]) + ", " + std::to_string(e[2]) + ")";
 	}
 
 };

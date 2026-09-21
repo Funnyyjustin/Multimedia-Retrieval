@@ -4,6 +4,7 @@
 #include "vec3.h"
 #include <vector>
 #include "primitive.h"
+#include <string>
 
 
 /// <summary>
@@ -20,6 +21,16 @@ public:
 	void setLabel(const std::string& label) 
 	{
 		this->label = label;
+	}
+
+	int size() 
+	{
+		return primitives.size();
+	}
+
+	void show()
+	{
+		for (int i = 0; i < primitives.size(); i++) primitives[i].show();
 	}
 
 private:

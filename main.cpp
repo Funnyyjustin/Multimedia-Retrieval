@@ -1,6 +1,8 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
+#include "parseobj.h"
+#include "object.h"
 
 int main()
 {
@@ -10,6 +12,11 @@ int main()
         std::cout << "Failed to initialize GLAD" << std::endl;
         return -1;
     }*/
+
+    Parser parser;
+    Mesh obj = parser.parseOFF("m0.off");
+    //std::cout << obj.size() << std::endl;
+    //obj.show();
     
     // Init GLFW
     glfwInit();

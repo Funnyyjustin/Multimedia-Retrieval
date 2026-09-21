@@ -13,7 +13,7 @@ class Parser
 {
 	// Use links given by Telea with code examples of parser 
 	// OFF formatting: https://shape.cs.princeton.edu/benchmark/documentation/off_format.html
-
+public:
 	Mesh parseOFF(const std::string& path) 
 	{
 		std::ifstream file(path);
@@ -78,8 +78,7 @@ class Parser
 					pts.push_back(vertices[std::stoi(word)]);
 				}
 
-				if (pts.size() == 3)	  prims.push_back(Triangle(pts[0], pts[1], pts[2]));
-				else if (pts.size() == 4) prims.push_back(Quad(pts[0], pts[1], pts[2], pts[3]));
+				prims.push_back(Primitive(pts));
 			}
 		}
 
