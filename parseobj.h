@@ -20,6 +20,7 @@ public:
 
 		
 		std::vector<Primitive> prims;
+		std::vector<Point3> trivertsgl;
 		
 		if (file.is_open()) 
 		{
@@ -78,11 +79,12 @@ public:
 					pts.push_back(vertices[std::stoi(word)]);
 				}
 
+				trivertsgl.insert(std::end(trivertsgl), std::begin(pts), std::end(pts));
 				prims.push_back(Primitive(pts));
 			}
 		}
 
 		file.close();
-		return Mesh(prims);
+		return Mesh(prims, trivertsgl);
 	}
 };
