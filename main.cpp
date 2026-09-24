@@ -60,9 +60,7 @@ int main()
     glEnable(GL_DEPTH_TEST);
 
     // 4. Mesh inladen en hoekpunten ophalen
-    Parser parser;
     std::vector<float> vertices = obj.trivertsgl;
-    int vertexCount = vertices.size() / 3;
 
     // 5. Shaders compileren en linken
     unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
