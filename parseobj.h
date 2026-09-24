@@ -20,7 +20,7 @@ public:
 
 		
 		std::vector<Primitive> prims;
-		std::vector<Point3> trivertsgl;
+		std::vector<float> trivertsgl;
 		
 		if (file.is_open()) 
 		{
@@ -73,10 +73,14 @@ public:
 				l >> word;
 				int num = std::stoi(word);
 				std::vector<Point3> pts;
+				std::vector<float> unpackedpts;
 				for (int i = 0; i < num; i++)
 				{
 					l >> word;
 					pts.push_back(vertices[std::stoi(word)]);
+					trivertsgl.push_back(vertices[std::stoi(word)].x());
+					trivertsgl.push_back(vertices[std::stoi(word)].y());
+					trivertsgl.push_back(vertices[std::stoi(word)].z());
 				}
 
 				trivertsgl.insert(std::end(trivertsgl), std::begin(pts), std::end(pts));
