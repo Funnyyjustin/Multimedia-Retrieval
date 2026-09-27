@@ -13,7 +13,9 @@
 class Mesh 
 {
 public:
-	Mesh(const std::vector<Primitive>& prims) : primitives(prims)
+	std::vector<float> trivertsgl;
+
+	Mesh(const std::vector<Primitive>& prims, std::vector<float> verts) : primitives(prims), trivertsgl(verts)
 	{
 
 	}
