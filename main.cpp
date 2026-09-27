@@ -3,15 +3,15 @@
 #include <iostream>
 #include "parseobj.h"
 #include "object.h"
+#include "camera.h"
 
 const char* vertexShaderSource = "#version 330 core\n"
 "layout (location = 0) in vec3 aPos;\n"
+"uniform mat4 uMVP;\n"
 "void main()\n"
 "{\n"
-"   // Tip: vermenigvuldig aPos eventueel met een schaalfactor (bv. 0.5) als het model te groot is\n"
-"   gl_Position = vec4(aPos, 1.0);\n"
+"   gl_Position = uMVP * vec4(aPos, 1.0);\n"
 "}\0";
-
 const char* fragmentShaderSource = "#version 330 core\n"
 "out vec4 FragColor;\n"
 "void main()\n"
@@ -41,6 +41,10 @@ int main()
 
     // 2. Window aanmaken
     GLFWwindow* window = glfwCreateWindow(800, 600, "Multimedia Retrieval", NULL, NULL);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
+    glfwSetCursorPosCallback(window, cursor_position_callback);
+    glfwSetScrollCallback(window, scroll_callback);
+
     if (window == NULL)
     {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -97,20 +101,53 @@ int main()
     glBindVertexArray(0);
     // Show window
     // 7. Render loop
+    // Haal de locatie van het uniform op (buiten de loop of erin)
+    int mvpLoc = glGetUniformLocation(shaderProgram, "uMVP");
+
+    float lastFrameTime = 0.0f;
+
     while (!glfwWindowShouldClose(window))
     {
-        // Scherm wissen
+        // 1. Delta time berekenen
+        float currentFrameTime = static_cast<float>(glfwGetTime());
+        float deltaTime = currentFrameTime - lastFrameTime;
+        lastFrameTime = currentFrameTime;
+
+        // 2. Toetsenbord input verwerken (WASD / pijltjestoetsen)
+        processCameraKeyboard(window, deltaTime);
+
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Teken het model
         glUseProgram(shaderProgram);
+
+        // 3. Camerapositie ophalen
+        glm::vec3 cameraPos, camRight, camUp;
+        getCameraVectors(cameraPos, camRight, camUp);
+
+        // 4. Matrices opbouwen
+        glm::mat4 model = glm::mat4(1.0f);
+        glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
+    
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
+        float aspect = (height > 0) ? (float)width / (float)height : 1.0f;
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+
+        // 5. Gecombineerde MVP = Projection * View * Model
+        glm::mat4 mvp = projection * view * model;
+
+        // 6. Stuur naar shader
+        glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
+
+        // Teken het model
         glBindVertexArray(VAO);
         glDrawArrays(GL_TRIANGLES, 0, vertexCount);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+
 
     // Geheugen opruimen
     glDeleteVertexArrays(1, &VAO);
