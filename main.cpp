@@ -13,10 +13,11 @@ const char* vertexShaderSource = "#version 330 core\n"
 "   gl_Position = uMVP * vec4(aPos, 1.0);\n"
 "}\0";
 const char* fragmentShaderSource = "#version 330 core\n"
+"uniform vec4 uColor;\n"
 "out vec4 FragColor;\n"
 "void main()\n"
 "{\n"
-"   FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f); // Oranje kleur\n"
+"   FragColor = uColor;\n"
 "}\n\0";
 
 int main()
@@ -103,11 +104,23 @@ int main()
     // 7. Render loop
     // Haal de locatie van het uniform op (buiten de loop of erin)
     int mvpLoc = glGetUniformLocation(shaderProgram, "uMVP");
+    GLint colorLoc = glGetUniformLocation(shaderProgram, "uColor");
+    std::cout << "colorLoc = " << colorLoc << std::endl;
 
     float lastFrameTime = 0.0f;
-
+    
+    int mode = 0;
     while (!glfwWindowShouldClose(window))
     {
+        if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS)
+            mode = 0;
+        else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS)
+            mode = 1;
+        else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS)
+            mode = 2;
+        else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS)
+            mode = 3;
+
         // 1. Delta time berekenen
         float currentFrameTime = static_cast<float>(glfwGetTime());
         float deltaTime = currentFrameTime - lastFrameTime;
@@ -120,6 +133,7 @@ int main()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
+        glUseProgram(fragmentShader);
 
         // 3. Camerapositie ophalen
         glm::vec3 cameraPos, camRight, camUp;
@@ -142,7 +156,27 @@ int main()
 
         // Teken het model
         glBindVertexArray(VAO);
+        glUniform4f(colorLoc, 1.0f, 0.5f, 0.2f, 1.0f);
         glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+
+        // Draw edges
+        if (mode == 1 || mode == 3)
+        {
+            glUniform4f(colorLoc, 0.5f, 0.25f, 0.1f, 1.0f);
+            glLineWidth(2.0f);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        }
+        
+        // Draw vertices
+        if (mode == 2 || mode == 3)
+        {
+            glUniform4f(colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+            glPointSize(4.0f);
+            glDrawArrays(GL_POINTS, 0, vertexCount);
+        }
+        
 
         glfwSwapBuffers(window);
         glfwPollEvents();
