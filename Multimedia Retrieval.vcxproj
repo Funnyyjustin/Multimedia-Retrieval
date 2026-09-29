@@ -143,6 +143,9 @@
     <ClInclude Include="primitive.h" />
     <ClInclude Include="vec3.h" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="ObjectFiles\m0.off" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

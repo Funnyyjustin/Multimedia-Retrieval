@@ -30,7 +30,7 @@ int main()
     }*/
 
     Parser parser;
-    Mesh obj = parser.parseOFF("m0.off");
+    Mesh obj = parser.parseOFF("ObjectFiles/4/m403/m403.off");
     float vertexCount = obj.trivertsgl.size() / 3;
     //std::cout << obj.size() << std::endl;
     //obj.show();
