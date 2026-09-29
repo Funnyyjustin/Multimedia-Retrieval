@@ -30,7 +30,7 @@ int main()
     }*/
 
     Parser parser;
-    Mesh obj = parser.parseOFF("ObjectFiles/4/m403/m403.off");
+    Mesh obj = parser.parseOFF("ObjectFiles/1/m110/m110.off");
     float vertexCount = obj.trivertsgl.size() / 3;
     //std::cout << obj.size() << std::endl;
     //obj.show();
@@ -45,6 +45,7 @@ int main()
     glfwSetMouseButtonCallback(window, mouse_button_callback);
     glfwSetCursorPosCallback(window, cursor_position_callback);
     glfwSetScrollCallback(window, scroll_callback);
+    glfwSetKeyCallback(window, key_callback);
 
     if (window == NULL)
     {
@@ -109,18 +110,8 @@ int main()
 
     float lastFrameTime = 0.0f;
     
-    int mode = 0;
     while (!glfwWindowShouldClose(window))
     {
-        if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS)
-            mode = 0;
-        else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS)
-            mode = 1;
-        else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS)
-            mode = 2;
-        else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS)
-            mode = 3;
-
         // 1. Delta time berekenen
         float currentFrameTime = static_cast<float>(glfwGetTime());
         float deltaTime = currentFrameTime - lastFrameTime;
@@ -156,11 +147,16 @@ int main()
 
         // Teken het model
         glBindVertexArray(VAO);
-        glUniform4f(colorLoc, 1.0f, 0.5f, 0.2f, 1.0f);
-        glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+
+        //Draw face
+        if (showFace)
+        {
+            glUniform4f(colorLoc, 1.0f, 0.5f, 0.2f, 1.0f);
+            glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+        }
 
         // Draw edges
-        if (mode == 1 || mode == 3)
+        if (showEdge)
         {
             glUniform4f(colorLoc, 0.5f, 0.25f, 0.1f, 1.0f);
             glLineWidth(2.0f);
@@ -169,8 +165,8 @@ int main()
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
         
-        // Draw vertices
-        if (mode == 2 || mode == 3)
+        // Draw node
+        if (showNode)
         {
             glUniform4f(colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
             glPointSize(4.0f);

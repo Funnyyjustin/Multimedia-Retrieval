@@ -44,6 +44,21 @@ inline void mouse_button_callback(GLFWwindow* window, int button, int action, in
     }
 }
 
+bool showEdge = true;
+bool showNode = false;
+bool showFace = true;
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    // action == GLFW_PRESS vuurt exact één keer af bij het indrukken
+    if (action == GLFW_PRESS)
+    {
+        if (key == GLFW_KEY_1) showEdge = !showEdge;
+        if (key == GLFW_KEY_2) showNode = !showNode;
+        if (key == GLFW_KEY_3) showFace = !showFace;
+    }
+}
+
 // Callback: muisbeweging
 inline void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
 {
