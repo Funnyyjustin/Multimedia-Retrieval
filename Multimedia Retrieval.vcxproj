@@ -139,6 +139,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="camera.h" />
+    <ClInclude Include="fileSelector.h" />
     <ClInclude Include="object.h" />
     <ClInclude Include="parseobj.h" />
     <ClInclude Include="primitive.h" />

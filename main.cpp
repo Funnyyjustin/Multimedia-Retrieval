@@ -2,9 +2,13 @@
 #include <GLFW/glfw3.h>
 #include <filesystem>
 #include <iostream>
+#include <vector>
+#include <algorithm>
+#include <limits>
 #include "parseobj.h"
 #include "object.h"
 #include "camera.h"
+#include "fileSelector.h"
 
 namespace fs = std::filesystem;
 
@@ -36,9 +40,18 @@ int main()
     // Rendering mode
     if (num == 1)
     {
+        fs::path selectedFile = selectModelFile("ObjectFiles");
+        if (selectedFile.empty())
+        {
+            return -1;
+        }
+
+        std::cout << "Laden van bestand: " << selectedFile.string() << "\n";
+
         Parser parser;
-        Mesh obj = parser.parseOFF("ObjectFiles/Bed/D00031.obj");
+        Mesh obj = parser.parseOFF(selectedFile.string());
         float vertexCount = obj.trivertsgl.size() / 3;
+
         //std::cout << obj.size() << std::endl;
         //obj.show();
 
