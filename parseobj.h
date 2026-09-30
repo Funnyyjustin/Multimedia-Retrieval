@@ -115,7 +115,8 @@ public:
 						trivertsgl.push_back(vert.z());
 
 						//std::cout << index << " " << norms.size() << std::endl;
-						//norms.push_back(normals[index]);
+						if (normals.size() > 0)
+							norms.push_back(normals[index]);
 					}
 
 					prims.push_back(Primitive(verts, norms));
