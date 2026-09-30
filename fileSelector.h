@@ -11,13 +11,18 @@ namespace fs = std::filesystem;
 
 inline fs::path selectModelFile(const fs::path& baseDir = "ObjectFiles")
 {
-    if (!fs::exists(baseDir) || !fs::is_directory(baseDir))
+    if (!fs::exists(baseDir))
     {
-        std::cerr << "Fout: Map '" << baseDir.string() << "' bestaat niet of is geen directory.\n";
+        std::cerr << "Error: Map '" << baseDir.string() << "' does not exist.\n";
+        return {};
+    }
+    else if (!fs::is_directory(baseDir))
+    {
+        std::cerr << "Error: Map '" << baseDir.string() << "' is not a directory.\n";
         return {};
     }
 
-    // 1. Verzamel alle submappen (classes)
+    // Get all subfolders
     std::vector<fs::path> classes;
     for (const auto& entry : fs::directory_iterator(baseDir))
     {
@@ -29,15 +34,15 @@ inline fs::path selectModelFile(const fs::path& baseDir = "ObjectFiles")
 
     if (classes.empty())
     {
-        std::cerr << "Geen categorieen gevonden in " << baseDir.string() << "!\n";
+        std::cerr << "Error: No category found in " << baseDir.string() << "!\n";
         return {};
     }
 
-    // Sorteer alfabetisch voor overzichtelijkheid
+    // Sort alphabetically
     std::sort(classes.begin(), classes.end());
 
-    // 2. Toon alle classes genummerd
-    std::cout << "\n=== Kies een categorie ===\n";
+    // Show all classes by number
+    std::cout << "\n=== Choose a category ===\n";
     for (size_t i = 0; i < classes.size(); ++i)
     {
         std::cout << (i + 1) << ". " << classes[i].filename().string() << "\n";
@@ -46,19 +51,19 @@ inline fs::path selectModelFile(const fs::path& baseDir = "ObjectFiles")
     int classChoice = 0;
     while (true)
     {
-        std::cout << "\nVoer het nummer van de gewenste categorie in (1-" << classes.size() << "): ";
+        std::cout << "\nType in the number of the class: (1-" << classes.size() << "): ";
         if (std::cin >> classChoice && classChoice >= 1 && classChoice <= static_cast<int>(classes.size()))
         {
             break;
         }
         std::cin.clear();
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        std::cout << "Ongeldige keuze, probeer opnieuw.\n";
+        std::cout << "Invalid choice, try again.\n";
     }
 
     fs::path selectedClass = classes[classChoice - 1];
 
-    // 3. Verzamel bestanden (.obj / .off) binnen de gekozen categorie
+    // 3. Get all files (.obj or .off) within directory
     std::vector<fs::path> files;
     for (const auto& entry : fs::directory_iterator(selectedClass))
     {
@@ -75,14 +80,14 @@ inline fs::path selectModelFile(const fs::path& baseDir = "ObjectFiles")
 
     if (files.empty())
     {
-        std::cerr << "Geen .obj of .off bestanden gevonden in " << selectedClass.string() << "!\n";
+        std::cerr << "No .obj or .off files found in " << selectedClass.string() << "!\n";
         return {};
     }
 
     std::sort(files.begin(), files.end());
 
-    // 4. Toon alle bestanden genummerd
-    std::cout << "\n=== Kies een bestand in " << selectedClass.filename().string() << " ===\n";
+    // Show all files, numbered
+    std::cout << "\n=== Choose a file in " << selectedClass.filename().string() << " ===\n";
     for (size_t i = 0; i < files.size(); ++i)
     {
         std::cout << (i + 1) << ". " << files[i].filename().string() << "\n";
@@ -91,14 +96,14 @@ inline fs::path selectModelFile(const fs::path& baseDir = "ObjectFiles")
     int fileChoice = 0;
     while (true)
     {
-        std::cout << "\nVoer het nummer van het bestand in (1-" << files.size() << "): ";
+        std::cout << "\nType in the number of the file: (1-" << files.size() << "): ";
         if (std::cin >> fileChoice && fileChoice >= 1 && fileChoice <= static_cast<int>(files.size()))
         {
             break;
         }
         std::cin.clear();
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        std::cout << "Ongeldige keuze, probeer opnieuw.\n";
+        std::cout << "Invalid choice, try again.\n";
     }
 
     return files[fileChoice - 1];

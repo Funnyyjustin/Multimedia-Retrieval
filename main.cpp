@@ -46,7 +46,7 @@ int main()
             return -1;
         }
 
-        std::cout << "Laden van bestand: " << selectedFile.string() << "\n";
+        std::cout << "Loading file: " << selectedFile.string() << "\n";
 
         Parser parser;
         Mesh obj = parser.parseOFF(selectedFile.string());
@@ -60,7 +60,7 @@ int main()
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-        // 2. Window aanmaken
+        // Create window
         GLFWwindow* window = glfwCreateWindow(800, 600, "Multimedia Retrieval", NULL, NULL);
         glfwSetMouseButtonCallback(window, mouse_button_callback);
         glfwSetCursorPosCallback(window, cursor_position_callback);
@@ -75,7 +75,7 @@ int main()
         }
         glfwMakeContextCurrent(window);
 
-        // 3. GLAD initialiseren (MOET na glfwMakeContextCurrent!)
+        // Initialise GLAD
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
         {
             std::cout << "Failed to initialize GLAD" << std::endl;
@@ -85,10 +85,10 @@ int main()
         glViewport(0, 0, 800, 600);
         glEnable(GL_DEPTH_TEST);
 
-        // 4. Mesh inladen en hoekpunten ophalen
+        // Load in mesh
         std::vector<float> vertices = obj.trivertsgl;
 
-        // 5. Shaders compileren en linken
+        // Compile and load shaders
         unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
         glCompileShader(vertexShader);
@@ -105,7 +105,7 @@ int main()
         glDeleteShader(vertexShader);
         glDeleteShader(fragmentShader);
 
-        // 6. VAO en VBO instellen
+        // VAO, VBO
         unsigned int VAO, VBO;
         glGenVertexArrays(1, &VAO);
         glGenBuffers(1, &VBO);
@@ -115,15 +115,15 @@ int main()
         glBindBuffer(GL_ARRAY_BUFFER, VBO);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
 
-        // Vertel OpenGL hoe de data gelezen moet worden: positie = 3 floats (layout index 0)
+        // Data reading
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
         glEnableVertexAttribArray(0);
 
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
+
         // Show window
-        // 7. Render loop
-        // Haal de locatie van het uniform op (buiten de loop of erin)
+        // Render loop
         int mvpLoc = glGetUniformLocation(shaderProgram, "uMVP");
         GLint colorLoc = glGetUniformLocation(shaderProgram, "uColor");
         std::cout << "colorLoc = " << colorLoc << std::endl;
@@ -132,12 +132,12 @@ int main()
 
         while (!glfwWindowShouldClose(window))
         {
-            // 1. Delta time berekenen
+            // Calculate delta time
             float currentFrameTime = static_cast<float>(glfwGetTime());
             float deltaTime = currentFrameTime - lastFrameTime;
             lastFrameTime = currentFrameTime;
 
-            // 2. Toetsenbord input verwerken (WASD / pijltjestoetsen)
+            // Process keyboard input
             processCameraKeyboard(window, deltaTime);
 
             glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -146,11 +146,11 @@ int main()
             glUseProgram(shaderProgram);
             glUseProgram(fragmentShader);
 
-            // 3. Camerapositie ophalen
+            // Get camera position
             glm::vec3 cameraPos, camRight, camUp;
             getCameraVectors(cameraPos, camRight, camUp);
 
-            // 4. Matrices opbouwen
+            // Build matrices
             glm::mat4 model = glm::mat4(1.0f);
             glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
 
@@ -158,17 +158,15 @@ int main()
             glfwGetFramebufferSize(window, &width, &height);
             float aspect = (height > 0) ? (float)width / (float)height : 1.0f;
             glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
-
-            // 5. Gecombineerde MVP = Projection * View * Model
             glm::mat4 mvp = projection * view * model;
 
-            // 6. Stuur naar shader
+            // Write to shader
             glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
 
-            // Teken het model
+            // Draw models
             glBindVertexArray(VAO);
 
-            //Draw face
+            // Draw face
             if (showFace)
             {
                 glUniform4f(colorLoc, 1.0f, 0.5f, 0.2f, 1.0f);
@@ -199,7 +197,7 @@ int main()
         }
 
 
-        // Geheugen opruimen
+        // Clean memory
         glDeleteVertexArrays(1, &VAO);
         glDeleteBuffers(1, &VBO);
         glDeleteProgram(shaderProgram);
