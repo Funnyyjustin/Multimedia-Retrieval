@@ -212,20 +212,25 @@ int main()
     {
         fs::path objectFiles = "ObjectFiles";
 
+        int shape_index = 0;
+
         // 69 classes in total.. nice ;)
         for (const auto& folder : fs::directory_iterator(objectFiles))
         {
             if (!folder.is_directory())
                 continue;
 
-            std::cout << "Folder: " << folder.path().filename() << "\n";
+            //std::cout << "Folder: " << folder.path().filename() << "\n";
 
             for (const auto& file : fs::directory_iterator(folder.path()))
             {
-                std::cout << " " << file.path().filename() << "\n";
+                std::cout << "Shape filename: " << file.path().filename() << "\n";
+                std::cout << "Class: " << folder.path().filename() << "\n";
+                std::cout << "\n";
             }
 
             std::cout << "\n";
+            shape_index++;
         }
     }
 
