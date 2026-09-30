@@ -212,23 +212,28 @@ int main()
 
         int shape_index = 0;
 
+        int limit = 2;
+
         // 69 classes in total.. nice ;)
         for (const auto& folder : fs::directory_iterator(objectFiles))
         {
+            int index = 0;
+
             if (!folder.is_directory())
                 continue;
 
-            //std::cout << "Folder: " << folder.path().filename() << "\n";
-
             for (const auto& file : fs::directory_iterator(folder.path()))
             {
+                if (index >= limit)
+                    continue;
+
+                std::cout << "Shape id: " << shape_index << "\n";
                 std::cout << "Shape filename: " << file.path().filename() << "\n";
                 std::cout << "Class: " << folder.path().filename() << "\n";
                 std::cout << "\n";
+                shape_index++;
+                index++;
             }
-
-            std::cout << "\n";
-            shape_index++;
         }
     }
 
