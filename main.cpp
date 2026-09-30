@@ -213,6 +213,8 @@ int main()
         int shape_index = 0;
 
         int limit = 2;
+        std::cout << "Type in the max number of shapes taken from each class.\n";
+        std::cin >> limit;
 
         // 69 classes in total.. nice ;)
         for (const auto& folder : fs::directory_iterator(objectFiles))
