@@ -7,13 +7,12 @@ class Primitive
 {
 public:
 	Point3 position;
-	Vec3 normal;
+	std::vector<Vec3> normals;
 	std::vector<Point3> vertices;
 
-	Primitive(const std::vector<Point3> vertices) : vertices(vertices)
+	Primitive(const std::vector<Point3> vertices, const std::vector<Vec3> normals) : vertices(vertices), normals(normals)
 	{
-		auto n = cross(vertices[0] - vertices[1], vertices[0] - vertices[2]);
-		normal = unit_vector(n);
+		
 	}
 
 	void show()

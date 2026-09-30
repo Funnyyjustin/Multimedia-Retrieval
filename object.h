@@ -14,6 +14,10 @@ class Mesh
 {
 public:
 	std::vector<float> trivertsgl;
+	Point3 minPoint;
+	Point3 maxPoint;
+	bool trisOnly;
+	bool quadsOnly;
 
 	Mesh(const std::vector<Primitive>& prims, std::vector<float> verts) : primitives(prims), trivertsgl(verts)
 	{

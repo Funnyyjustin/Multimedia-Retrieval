@@ -18,10 +18,115 @@ public:
 	{
 		std::ifstream file(path);
 
-		
 		std::vector<Primitive> prims;
 		std::vector<float> trivertsgl;
-		
+		std::vector<Point3> vertices;
+		std::vector<Point3> normals;
+
+		float minX = INFINITY; float maxX = -INFINITY;
+		float minY = INFINITY; float maxY = -INFINITY;
+		float minZ = INFINITY; float maxZ = -INFINITY;
+
+		bool onlyTri = true;
+		bool onlyQuad = true;
+
+		if (file.is_open())
+		{
+			while (file)
+			{
+				string line = " ";
+				std::getline(file, line);
+
+				if (line.substr(0, 2) == "v ")
+				{
+					std::istringstream l(line);
+					string word;
+
+					// Skip the first word: "v"
+					string skip;
+					l >> skip;
+
+					l >> word;
+					float a = std::stof(word);
+					if (a > maxX) maxX = a;
+					if (a < minX) minX = a;
+					
+					l >> word;
+					float b = std::stof(word);
+					if (b > maxY) maxY = b;
+					if (b < minY) minY = b;
+
+					l >> word;
+					float c = std::stof(word);
+					if (c > maxZ) maxZ = c;
+					if (c < minZ) minZ = c;
+
+					vertices.push_back(Point3(a, b, c));
+				}
+				else if (line.substr(0, 2) == "vn")
+				{
+					std::istringstream l(line);
+					string word;
+					
+					// Skip the first word: "vn"
+					string skip;
+					l >> skip;
+
+					l >> word;
+					float a = std::stof(word);
+
+					l >> word;
+					float b = std::stof(word);
+
+					l >> word;
+					float c = std::stof(word);
+
+					normals.push_back(Point3(a, b, c));
+				}
+				else if (line.substr(0, 2) == "f ")
+				{
+					std::istringstream l(line);
+					std::vector<string> temp;
+					std::vector<Point3> verts;
+					std::vector<Vec3> norms;
+
+					string word;
+					
+					string skip;
+					l >> skip;
+
+					while (l >> word)
+						temp.push_back(word);
+
+					if (onlyTri && temp.size() > 3) onlyTri = false;
+					if (onlyQuad && temp.size() < 4) onlyQuad = false;
+
+					for (int i = 0; i < temp.size(); i++)
+					{
+						string w = temp[i];
+						std::size_t pos = w.find('/');
+						int index = std::stoi(w.substr(0, pos)) - 1;
+						//std::cout << index << " " << vertices.size() << std::endl;
+						Point3 vert = vertices[index];
+						verts.push_back(vert);
+
+						trivertsgl.push_back(vert.x());
+						trivertsgl.push_back(vert.y());
+						trivertsgl.push_back(vert.z());
+
+						//std::cout << index << " " << norms.size() << std::endl;
+						//norms.push_back(normals[index]);
+					}
+
+					prims.push_back(Primitive(verts, norms));
+				}
+			}
+			file.close();
+			return Mesh(prims, trivertsgl);
+		}
+
+
+		/*
 		if (file.is_open()) 
 		{
 			// skip line that just says "OFF"
@@ -107,8 +212,16 @@ public:
 				prims.push_back(Primitive(pts));
 			}
 		}
-
+		*/
+		
 		file.close();
+
+		Mesh out = Mesh(prims, trivertsgl);
+		out.maxPoint = Point3(maxX, maxY, maxZ);
+		out.minPoint = Point3(minX, minY, minZ);
+		out.trisOnly = onlyTri;
+		out.quadsOnly = onlyQuad;
+
 		return Mesh(prims, trivertsgl);
 	}
 };
