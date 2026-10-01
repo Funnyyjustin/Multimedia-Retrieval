@@ -217,6 +217,10 @@ int main()
         std::cout << "Type in the max number of shapes taken from each class.\n";
         std::cin >> limit;
 
+        std::vector<std::vector<int>> faces_vector;
+        std::vector<std::vector<int>> verts_vector;
+        std::vector<std::vector<int>> types_vector;
+
         // 69 classes in total.. nice ;)
         for (const auto& folder : fs::directory_iterator(objectFiles))
         {
@@ -225,6 +229,10 @@ int main()
             // Only check directories
             if (!folder.is_directory())
                 continue;
+
+            std::vector<int> faces;
+            std::vector<int> verts;
+            std::vector<int> types;
 
             // Check every file in each subfolder
             // This should only be the files of the shape in that folder / class
@@ -242,9 +250,21 @@ int main()
                     return -1;
                 }
 
+                faces.push_back(m.primsSize());
+                verts.push_back(m.vertsSize());
+
                 string type = "Mix of tris and quads";
-                if (m.quadsOnly) type = "Quads only";
-                else if (m.trisOnly) type = "Tris only";
+                if (m.quadsOnly)
+                {
+                    type = "Quads only";
+                    types.push_back(0);
+                }
+                else if (m.trisOnly)
+                {
+                    type = "Tris only";
+                    types.push_back(1);
+                }
+                else types.push_back(2);
 
                 std::cout << "Shape id: " << shape_index << "\n";
                 std::cout << "Shape filename: " << file.path().filename() << "\n";
@@ -259,6 +279,10 @@ int main()
                 shape_index++;
                 index++;
             }
+
+            faces_vector.push_back(faces);
+            verts_vector.push_back(verts);
+            types_vector.push_back(types);
         }
     }
 
