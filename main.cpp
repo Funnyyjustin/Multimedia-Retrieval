@@ -201,9 +201,20 @@ std::vector<int> flatten(std::vector<std::vector<int>>& vec)
     return result;
 }
 
-void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, const std::vector<int>& types)
+std::vector<Mesh> flatten(std::vector<std::vector<Mesh>>& vec)
 {
-    std::ofstream file("histograms.csv");
+    std::vector<Mesh> result;
+
+    for (const auto& v : vec) {
+        result.insert(result.end(), v.begin(), v.end());
+    }
+
+    return result;
+}
+
+void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, const std::vector<int>& types, std::string filename)
+{
+    std::ofstream file(filename + ".csv");
 
     if (!file.is_open())
         return;
@@ -233,24 +244,31 @@ void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, c
     }
 }
 
-void analyseDatabase(fs::path path)
+// Database analyse functions
+
+std::vector<Mesh> parseDatabase(fs::path path)
 {
     Parser p;
-
     int index = 0;
+
     int class_index = 0;
 
-    int class_limit;
-    int shape_limit;
-    std::cout << "Type in the max number of classes to analyze:\n";
+    int shape_limit = 0;
+    int class_limit = 0;
+
+    std::cout << "Type in the max number of classes to parse (0-69):\n";
     std::cin >> class_limit;
 
-    std::cout << "Type in the max number of shapes per class to analyze:\n";
+    std::cout << "Type in the max number of shapes per class to parse (0-100):\n";
     std::cin >> shape_limit;
 
     std::vector<std::vector<int>> faces_vector;
     std::vector<std::vector<int>> verts_vector;
     std::vector<std::vector<int>> types_vector;
+
+    std::vector<std::vector<Mesh>> meshes_vector;
+
+    std::cout << "Parsing database..\n";
 
     // 69 classes in total.. nice ;)
     for (const auto& folder : fs::directory_iterator(path))
@@ -258,58 +276,45 @@ void analyseDatabase(fs::path path)
         if (class_index >= class_limit)
             continue;
 
-        int shape_index = 0;
-
         // Only check directories
         if (!folder.is_directory())
             continue;
+
+        int shape_index = 0;
 
         std::vector<int> faces;
         std::vector<int> verts;
         std::vector<int> types;
 
+        std::vector<Mesh> meshes;
+
         // Check every file in each subfolder
         // This should only be the files of the shape in that folder / class
         for (const auto& file : fs::directory_iterator(folder.path()))
         {
-            // Only check the first 'limit' shapes of each class
             if (shape_index >= shape_limit)
                 continue;
 
+            std::cout << "Parsing file " << index << ".\n";
+
             fs::path selectedFile = file.path();
             Mesh m = p.parseOFF(selectedFile.string());
+            m.setLabel(folder.path().filename().string());
+            meshes.push_back(m);
 
             if (selectedFile.empty())
             {
-                return;
+                std::cout << "File is empty.\n";
+                continue;
             }
 
             faces.push_back(m.primsSize());
             verts.push_back(m.vertsSize());
 
-            string type = "Mix of tris and quads";
-            if (m.quadsOnly)
-            {
-                type = "Quads only";
-                types.push_back(0);
-            }
-            else if (m.trisOnly)
-            {
-                type = "Tris only";
-                types.push_back(1);
-            }
+            if (m.quadsOnly) types.push_back(0);
+            else if (m.trisOnly) types.push_back(1);
             else types.push_back(2);
 
-            std::cout << "Shape id: " << index << "\n";
-            std::cout << "Shape filename: " << file.path().filename() << "\n";
-            std::cout << "Class: " << folder.path().filename() << "\n";
-            std::cout << "Number of faces: " << m.primsSize() << "\n";
-            std::cout << "Number of vertices: " << m.vertsSize() << "\n";
-            std::cout << "Type of faces: " << type << "\n";
-            std::cout << "AABB: \n";
-            std::cout << "  min: " << m.minPoint.e[0] << " " << m.minPoint.e[1] << " " << m.minPoint.e[2] << "\n";
-            std::cout << "  max: " << m.maxPoint.e[0] << " " << m.maxPoint.e[1] << " " << m.maxPoint.e[2] << "\n";
-            std::cout << "\n";
             shape_index++;
             index++;
         }
@@ -318,21 +323,175 @@ void analyseDatabase(fs::path path)
         verts_vector.push_back(verts);
         types_vector.push_back(types);
 
+        meshes_vector.push_back(meshes);
+
         class_index++;
     }
 
-    std::vector<int> faces = flatten(faces_vector);
-    std::vector<int> verts = flatten(verts_vector);
-    std::vector<int> types = flatten(types_vector);
+    std::vector<Mesh> meshes = flatten(meshes_vector);
+
+    std::cout << "Finished parsing database.\n";
+
+    return meshes;
+}
+
+void analyseDatabase(std::vector<Mesh> meshes)
+{
+    std::cout << "Analysing database..\n";
+
+    std::vector<int> faces;
+    std::vector<int> verts;
+    std::vector<int> types;
+
+    // 69 classes in total.. nice ;)
+    for (Mesh m : meshes)
+    {
+        faces.push_back(m.primsSize());
+        verts.push_back(m.vertsSize());
+
+        string type = "Mix of tris and quads";
+        if (m.quadsOnly)
+        {
+            type = "Quads only";
+            types.push_back(0);
+        }
+        else if (m.trisOnly)
+        {
+            type = "Tris only";
+            types.push_back(1);
+        }
+        else types.push_back(2);
+
+        std::cout << "Class: " << m.getLabel() << "\n";
+        std::cout << "Number of faces: " << m.primsSize() << "\n";
+        std::cout << "Number of vertices: " << m.vertsSize() << "\n";
+        std::cout << "Type of faces: " << type << "\n";
+        std::cout << "AABB: \n";
+        std::cout << "  min: " << m.minPoint.e[0] << " " << m.minPoint.e[1] << " " << m.minPoint.e[2] << "\n";
+        std::cout << "  max: " << m.maxPoint.e[0] << " " << m.maxPoint.e[1] << " " << m.maxPoint.e[2] << "\n";
+        std::cout << "\n";
+    }
 
     std::cout << "Export to CSV file? y/n\n";
     char c;
     std::cin >> c;
 
     if (c == 'y')
-        exportToCSV(faces, verts, types);
+    {
+        std::cout << "Enter CSV file name:\n";
+        std::string filename;
+        std::cin >> filename;
+        exportToCSV(faces, verts, types, filename);
+    }
     else if (c != 'y' && c != 'n')
         std::cout << "Invalid input. Try again.\n";
+}
+
+// Resample functions
+
+void resampleMesh(Mesh& input)
+{
+    // TODO: step 2.3
+    // First, check if the mesh needs to be resampled --> set limits for #vertices that do not suffice
+    // According to the assignment, a good #vertices (or #samples) for a mesh is around 5k - 10k, but more research on this is needed
+    // If no need for resampling, return
+    // Else, resample according to the given algorithms in the assignment
+    // Upscale if too few, downscale if too many
+}
+
+std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes)
+{
+    std::vector<Mesh> result;
+
+    for (Mesh m : meshes)
+    {
+        resampleMesh(m);
+        result.push_back(m);
+    }
+
+    return result;
+}
+
+// Normalisation functions
+
+void translateBarycenter(Mesh& input)
+{
+    auto triverts = input.trivertsgl;
+    auto x_total = 0, y_total = 0, z_total = 0;
+
+    // Calculate barycenter, which is the average of all points
+    // First, we get the total sum of all points
+    for (int i = 0; i < triverts.size(); i += 3)
+    {
+        x_total += triverts[i];
+        y_total += triverts[i + 1];
+        z_total += triverts[i + 2];
+    }
+
+    // Then, we divide it by the total number of vertices
+    auto total_verts = input.vertsSize();
+    x_total /= total_verts;
+    y_total /= total_verts;
+    z_total /= total_verts;
+
+    // Finally, for each point, subtract the barycenter to get it centered
+    for (int i = 0; i < triverts.size(); i += 3)
+    {
+        triverts[i] =- x_total;
+        triverts[i + 1] =- y_total;
+        triverts[i + 2] =- z_total;
+    }
+}
+
+void scaleUniformly(Mesh& input)
+{
+    // Find extent of axis-aligned bounding box of the shape
+    Point3 minimums = input.minPoint;
+    Point3 maximums = input.maxPoint;
+
+    // Find largest dimension
+    auto largest_dim = std::max({maximums.e[0] - minimums.e[0], maximums.e[1] - minimums.e[1], maximums.e[2] - minimums.e[2]});
+
+    // Scale all verts by (1 / largest_dim)
+    auto triverts = input.trivertsgl;
+    auto factor = 1 / largest_dim;
+    for (int i = 0; i < input.trivertsgl.size(); i += 3)
+    {
+        triverts[i] *= factor;
+        triverts[i + 1] *= factor;
+        triverts[i + 2] *= factor;
+    }
+}
+
+void alignAxes(Mesh& input)
+{
+    // TODO: to be done with step 3.1
+}
+
+void flipShape(Mesh& input)
+{
+    // TODO: to be done with step 3.1
+}
+
+void normalizeMesh(Mesh& input)
+{
+    translateBarycenter(input);
+    //alignAxes(input);
+    //flipShape(input);
+    scaleUniformly(input);
+}
+
+std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
+{
+    std::vector<Mesh> result;
+
+    for (Mesh m : meshes)
+    {
+        normalizeMesh(m);
+        result.push_back(m);
+    }
+
+    return result;
 }
 
 // Main functions
@@ -368,19 +527,20 @@ int main()
     {
         // Analyse initial database
         fs::path objectFiles = "ObjectFiles";
-        analyseDatabase(objectFiles);
+        std::vector<Mesh> original_meshes = parseDatabase(objectFiles);
+        analyseDatabase(original_meshes);
 
-        // Resample outliers --> TODO (step 2.3)
+        // Resample outliers
+        //std::vector<Mesh> resampled_meshes = resampleMeshes(original_meshes);
 
-        // Analyse updated database --> should uncomment the following two lines when step 2.3 has been implemented
-        //fs::path updatedFiles = "UpdatedFiles";
-        //analyseDatabase(updatedFiles);
+        // Analyse updated meshes
+        //analyseDatabase(resampled_meshes);
 
-        // Normalization tool --> TODO (step 2.5)
+        // Normalization --> remeshing, translation, (rotation), (flipping), scaling
+        //std::vector<Mesh> normalized_meshes = normalizeMeshes(resampled_meshes);
 
-        // Check if normalization tool works correctly --> should uncomment the following two lines when step 2.5 has been implemented
-        //fs::path translatedFiles = "TranslatedFiles";
-        //analyseDatabase(translatedFiles);
+        // Check if normalization tool works correctly
+        //analyseDatabase(normalized_meshes);
     }
 
     return 0;
