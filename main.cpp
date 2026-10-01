@@ -12,6 +12,8 @@
 
 namespace fs = std::filesystem;
 
+// Shaders required for the 3D shapes
+
 const char* vertexShaderSource = "#version 330 core\n"
 "layout (location = 0) in vec3 aPos;\n"
 "uniform mat4 uMVP;\n"
@@ -27,6 +29,8 @@ const char* fragmentShaderSource = "#version 330 core\n"
 "   FragColor = uColor;\n"
 "}\n\0";
 
+// Helper functions
+
 std::vector<int> flatten(std::vector<std::vector<int>>& vec)
 {
     std::vector<int> result;
@@ -38,25 +42,39 @@ std::vector<int> flatten(std::vector<std::vector<int>>& vec)
     return result;
 }
 
-std::vector<int> makeHistogram(const std::vector<int>& data, int minValue, int maxValue, int numBins)
+void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, const std::vector<int>& types)
 {
-    std::vector<int> bins(numBins, 0);
+    std::ofstream file("histograms.csv");
 
-    float binWidth = (maxValue - minValue) / numBins;
+    if (!file.is_open())
+        return;
 
-    for (float value : data) {
-        int bin = static_cast<int>((value - minValue) / binWidth);
+    file << "Shape id; Number of faces; Number of vertices; Face type\n";
 
-        // Include the maximum value in the last bin.
-        if (bin == numBins)
-            bin = numBins - 1;
+    size_t maxSize = std::max({ faces.size(), verts.size(), types.size() });
 
-        if (bin >= 0 && bin < numBins)
-            ++bins[bin];
+    for (size_t i = 0; i < maxSize; ++i)
+    {
+        file << i << ";";
+
+        if (i < faces.size())
+            file << faces[i];
+
+        file << ";";
+
+        if (i < verts.size())
+            file << verts[i];
+
+        file << ";";
+
+        if (i < types.size())
+            file << types[i];
+
+        file << "\n";
     }
-
-    return bins;
 }
+
+// Main functions
 
 int main()
 {
@@ -242,11 +260,16 @@ int main()
     {
         fs::path objectFiles = "ObjectFiles";
 
-        int shape_index = 0;
+        int index = 0;
+        int class_index = 0;
 
-        int limit = 2;
-        std::cout << "Type in the max number of shapes taken from each class.\n";
-        std::cin >> limit;
+        int class_limit;
+        int shape_limit;
+        std::cout << "Type in the max number of classes to analyze:\n";
+        std::cin >> class_limit;
+
+        std::cout << "Type in the max number of shapes per class to analyze:\n";
+        std::cin >> shape_limit;
 
         std::vector<std::vector<int>> faces_vector;
         std::vector<std::vector<int>> verts_vector;
@@ -255,7 +278,10 @@ int main()
         // 69 classes in total.. nice ;)
         for (const auto& folder : fs::directory_iterator(objectFiles))
         {
-            int index = 0;
+            if (class_index >= class_limit)
+                continue;
+
+            int shape_index = 0;
 
             // Only check directories
             if (!folder.is_directory())
@@ -270,7 +296,7 @@ int main()
             for (const auto& file : fs::directory_iterator(folder.path()))
             {
                 // Only check the first 'limit' shapes of each class
-                if (index >= limit)
+                if (shape_index >= shape_limit)
                     continue;
 
                 fs::path selectedFile = file.path();
@@ -297,7 +323,7 @@ int main()
                 }
                 else types.push_back(2);
 
-                std::cout << "Shape id: " << shape_index << "\n";
+                std::cout << "Shape id: " << index << "\n";
                 std::cout << "Shape filename: " << file.path().filename() << "\n";
                 std::cout << "Class: " << folder.path().filename() << "\n";
                 std::cout << "Number of faces: " << m.primsSize() << "\n";
@@ -314,17 +340,22 @@ int main()
             faces_vector.push_back(faces);
             verts_vector.push_back(verts);
             types_vector.push_back(types);
+
+            class_index++;
         }
 
         std::vector<int> faces = flatten(faces_vector);
         std::vector<int> verts = flatten(verts_vector);
         std::vector<int> types = flatten(types_vector);
+        
+        std::cout << "Export to CSV file? y/n\n";
+        char c;
+        std::cin >> c;
 
-        auto hist_faces = makeHistogram(faces, 0, 1000000, 1000);
-        auto hist_verts = makeHistogram(verts, 0, 1000000, 1000);
-        auto hist_types = makeHistogram(types, 0, 2, 3);
-
-
+        if (c == 'y')
+            exportToCSV(faces, verts, types);
+        else if (c != 'y' && c != 'n')
+            std::cout << "Invalid input. Try again.\n";
     }
 
     return 0;
