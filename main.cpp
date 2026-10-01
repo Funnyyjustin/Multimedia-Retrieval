@@ -76,6 +76,8 @@ void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, c
 
 void analyseDatabase(fs::path path)
 {
+    Parser p;
+
     int index = 0;
     int class_index = 0;
 
@@ -92,7 +94,7 @@ void analyseDatabase(fs::path path)
     std::vector<std::vector<int>> types_vector;
 
     // 69 classes in total.. nice ;)
-    for (const auto& folder : fs::directory_iterator(objectFiles))
+    for (const auto& folder : fs::directory_iterator(path))
     {
         if (class_index >= class_limit)
             continue;
@@ -120,7 +122,7 @@ void analyseDatabase(fs::path path)
 
             if (selectedFile.empty())
             {
-                return -1;
+                return;
             }
 
             faces.push_back(m.primsSize());
