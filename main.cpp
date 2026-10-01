@@ -29,6 +29,8 @@ const char* fragmentShaderSource = "#version 330 core\n"
 
 int main()
 {
+    Parser p;
+
     std::cout << "Multimedia Retrieval tool\n";
     std::cout << "Select mode to begin: \n";
     std::cout << "1. Rendering mode\n";
@@ -48,8 +50,7 @@ int main()
 
         std::cout << "Loading file: " << selectedFile.string() << "\n";
 
-        Parser parser;
-        Mesh obj = parser.parseOFF(selectedFile.string());
+        Mesh obj = p.parseOFF(selectedFile.string());
         float vertexCount = obj.trivertsgl.size() / 3;
 
         //std::cout << obj.size() << std::endl;
@@ -221,17 +222,39 @@ int main()
         {
             int index = 0;
 
+            // Only check directories
             if (!folder.is_directory())
                 continue;
 
+            // Check every file in each subfolder
+            // This should only be the files of the shape in that folder / class
             for (const auto& file : fs::directory_iterator(folder.path()))
             {
+                // Only check the first 'limit' shapes of each class
                 if (index >= limit)
                     continue;
+
+                fs::path selectedFile = file.path();
+                Mesh m = p.parseOFF(selectedFile.string());
+
+                if (selectedFile.empty())
+                {
+                    return -1;
+                }
+
+                string type = "Mix of tris and quads";
+                if (m.quadsOnly) type = "Quads only";
+                else if (m.trisOnly) type = "Tris only";
 
                 std::cout << "Shape id: " << shape_index << "\n";
                 std::cout << "Shape filename: " << file.path().filename() << "\n";
                 std::cout << "Class: " << folder.path().filename() << "\n";
+                std::cout << "Number of faces: " << m.primsSize() << "\n";
+                std::cout << "Number of vertices: " << m.vertsSize() << "\n";
+                std::cout << "Type of faces: " << type << "\n";
+                std::cout << "AABB: \n";
+                std::cout << "  min: " << m.minPoint.e[0] << " " << m.minPoint.e[1] << " " << m.minPoint.e[2] << "\n";
+                std::cout << "  max: " << m.maxPoint.e[0] << " " << m.maxPoint.e[1] << " " << m.maxPoint.e[2] << "\n";
                 std::cout << "\n";
                 shape_index++;
                 index++;
