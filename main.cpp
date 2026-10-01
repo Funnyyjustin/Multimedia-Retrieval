@@ -446,16 +446,40 @@ void translateBarycenter(Mesh& input)
 void scaleUniformly(Mesh& input)
 {
     // Find extent of axis-aligned bounding box of the shape
-    Point3 minimums = input.minPoint;
-    Point3 maximums = input.maxPoint;
+    auto triverts = input.trivertsgl;
+    float x_min, x_max, y_min, y_max, z_min, z_max;
+
+    x_min = x_max = triverts[0];
+    y_min = y_max = triverts[1];
+    z_min = z_max = triverts[2];
+
+    for (int i = 0; i < triverts.size(); i += 3)
+    {
+        float x = triverts[0];
+        float y = triverts[1];
+        float z = triverts[2];
+
+        x_min = std::min(x_min, x);
+        x_max = std::max(x_max, x);
+
+        y_min = std::min(y_min, y);
+        y_max = std::max(y_max, y);
+
+        z_min = std::min(z_min, z);
+        z_max = std::max(z_max, z);
+    }
+
+    // Update AABB for the mesh
+    input.minPoint = Point3(x_min, y_min, z_min);
+    input.maxPoint = Point3(x_max, y_max, z_max);
 
     // Find largest dimension
-    auto largest_dim = std::max({maximums.e[0] - minimums.e[0], maximums.e[1] - minimums.e[1], maximums.e[2] - minimums.e[2]});
+    auto largest_dim = std::max({x_max - x_min, y_max - y_min, z_max - z_min});
 
     // Scale all verts by (1 / largest_dim)
     auto triverts = input.trivertsgl;
     auto factor = 1 / largest_dim;
-    for (int i = 0; i < input.trivertsgl.size(); i += 3)
+    for (int i = 0; i < triverts.size(); i += 3)
     {
         triverts[i] *= factor;
         triverts[i + 1] *= factor;
