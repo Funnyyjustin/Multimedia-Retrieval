@@ -122,13 +122,24 @@ public:
 					prims.push_back(Primitive(verts, norms));
 				}
 			}
-			file.close();
-			return Mesh(prims, trivertsgl);
 		}
 
+		file.close();
 
-		/*
-		if (file.is_open()) 
+		Mesh out = Mesh(prims, trivertsgl, vertices.size());
+		out.maxPoint = Point3(maxX, maxY, maxZ);
+		out.minPoint = Point3(minX, minY, minZ);
+		out.trisOnly = onlyTri;
+		out.quadsOnly = onlyQuad;
+
+		return out;
+	}
+};
+
+
+
+/*
+		if (file.is_open())
 		{
 			// skip line that just says "OFF"
 			string skip;
@@ -153,7 +164,7 @@ public:
 
 			std::vector<Point3> vertices;
 			// get vertices from file
-			for (long i = 0; i < numVertices; i++) 
+			for (long i = 0; i < numVertices; i++)
 			{
 				std::getline(file, line);
 				std::istringstream l(line);
@@ -214,15 +225,3 @@ public:
 			}
 		}
 		*/
-		
-		file.close();
-
-		Mesh out = Mesh(prims, trivertsgl);
-		out.maxPoint = Point3(maxX, maxY, maxZ);
-		out.minPoint = Point3(minX, minY, minZ);
-		out.trisOnly = onlyTri;
-		out.quadsOnly = onlyQuad;
-
-		return Mesh(prims, trivertsgl);
-	}
-};

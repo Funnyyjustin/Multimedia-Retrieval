@@ -19,7 +19,8 @@ public:
 	bool trisOnly;
 	bool quadsOnly;
 
-	Mesh(const std::vector<Primitive>& prims, std::vector<float> verts) : primitives(prims), trivertsgl(verts)
+
+	Mesh(const std::vector<Primitive>& prims, const std::vector<float>& verts, const int& numVerts) : primitives(prims), trivertsgl(verts), numVerts(numVerts)
 	{
 
 	}
@@ -29,9 +30,14 @@ public:
 		this->label = label;
 	}
 
-	int size() 
+	int primsSize() 
 	{
 		return primitives.size();
+	}
+
+	int vertsSize()
+	{
+		return numVerts;
 	}
 
 	void show()
@@ -42,4 +48,5 @@ public:
 private:
 	std::vector<Primitive> primitives;
 	std::string label;
+	int numVerts;
 };
