@@ -27,6 +27,37 @@ const char* fragmentShaderSource = "#version 330 core\n"
 "   FragColor = uColor;\n"
 "}\n\0";
 
+std::vector<int> flatten(std::vector<std::vector<int>>& vec)
+{
+    std::vector<int> result;
+
+    for (const auto& v : vec) {
+        result.insert(result.end(), v.begin(), v.end());
+    }
+
+    return result;
+}
+
+std::vector<int> makeHistogram(const std::vector<int>& data, int minValue, int maxValue, int numBins)
+{
+    std::vector<int> bins(numBins, 0);
+
+    float binWidth = (maxValue - minValue) / numBins;
+
+    for (float value : data) {
+        int bin = static_cast<int>((value - minValue) / binWidth);
+
+        // Include the maximum value in the last bin.
+        if (bin == numBins)
+            bin = numBins - 1;
+
+        if (bin >= 0 && bin < numBins)
+            ++bins[bin];
+    }
+
+    return bins;
+}
+
 int main()
 {
     Parser p;
@@ -284,6 +315,16 @@ int main()
             verts_vector.push_back(verts);
             types_vector.push_back(types);
         }
+
+        std::vector<int> faces = flatten(faces_vector);
+        std::vector<int> verts = flatten(verts_vector);
+        std::vector<int> types = flatten(types_vector);
+
+        auto hist_faces = makeHistogram(faces, 0, 1000000, 1000);
+        auto hist_verts = makeHistogram(verts, 0, 1000000, 1000);
+        auto hist_types = makeHistogram(types, 0, 2, 3);
+
+
     }
 
     return 0;
