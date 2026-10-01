@@ -74,6 +74,106 @@ void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, c
     }
 }
 
+void analyseDatabase(fs::path path)
+{
+    int index = 0;
+    int class_index = 0;
+
+    int class_limit;
+    int shape_limit;
+    std::cout << "Type in the max number of classes to analyze:\n";
+    std::cin >> class_limit;
+
+    std::cout << "Type in the max number of shapes per class to analyze:\n";
+    std::cin >> shape_limit;
+
+    std::vector<std::vector<int>> faces_vector;
+    std::vector<std::vector<int>> verts_vector;
+    std::vector<std::vector<int>> types_vector;
+
+    // 69 classes in total.. nice ;)
+    for (const auto& folder : fs::directory_iterator(objectFiles))
+    {
+        if (class_index >= class_limit)
+            continue;
+
+        int shape_index = 0;
+
+        // Only check directories
+        if (!folder.is_directory())
+            continue;
+
+        std::vector<int> faces;
+        std::vector<int> verts;
+        std::vector<int> types;
+
+        // Check every file in each subfolder
+        // This should only be the files of the shape in that folder / class
+        for (const auto& file : fs::directory_iterator(folder.path()))
+        {
+            // Only check the first 'limit' shapes of each class
+            if (shape_index >= shape_limit)
+                continue;
+
+            fs::path selectedFile = file.path();
+            Mesh m = p.parseOFF(selectedFile.string());
+
+            if (selectedFile.empty())
+            {
+                return -1;
+            }
+
+            faces.push_back(m.primsSize());
+            verts.push_back(m.vertsSize());
+
+            string type = "Mix of tris and quads";
+            if (m.quadsOnly)
+            {
+                type = "Quads only";
+                types.push_back(0);
+            }
+            else if (m.trisOnly)
+            {
+                type = "Tris only";
+                types.push_back(1);
+            }
+            else types.push_back(2);
+
+            std::cout << "Shape id: " << index << "\n";
+            std::cout << "Shape filename: " << file.path().filename() << "\n";
+            std::cout << "Class: " << folder.path().filename() << "\n";
+            std::cout << "Number of faces: " << m.primsSize() << "\n";
+            std::cout << "Number of vertices: " << m.vertsSize() << "\n";
+            std::cout << "Type of faces: " << type << "\n";
+            std::cout << "AABB: \n";
+            std::cout << "  min: " << m.minPoint.e[0] << " " << m.minPoint.e[1] << " " << m.minPoint.e[2] << "\n";
+            std::cout << "  max: " << m.maxPoint.e[0] << " " << m.maxPoint.e[1] << " " << m.maxPoint.e[2] << "\n";
+            std::cout << "\n";
+            shape_index++;
+            index++;
+        }
+
+        faces_vector.push_back(faces);
+        verts_vector.push_back(verts);
+        types_vector.push_back(types);
+
+        class_index++;
+    }
+
+    std::vector<int> faces = flatten(faces_vector);
+    std::vector<int> verts = flatten(verts_vector);
+    std::vector<int> types = flatten(types_vector);
+
+    std::cout << "Export to CSV file? y/n\n";
+    char c;
+    std::cin >> c;
+
+    if (c == 'y')
+        exportToCSV(faces, verts, types);
+    else if (c != 'y' && c != 'n')
+        std::cout << "Invalid input. Try again.\n";
+}
+
 // Main functions
 
 int main()
@@ -258,104 +358,21 @@ int main()
     // Analyse mode
     else if (num == 2)
     {
+        // Analyse initial database
         fs::path objectFiles = "ObjectFiles";
+        analyseDatabase(objectFiles);
 
-        int index = 0;
-        int class_index = 0;
+        // Resample outliers --> TODO (step 2.3)
 
-        int class_limit;
-        int shape_limit;
-        std::cout << "Type in the max number of classes to analyze:\n";
-        std::cin >> class_limit;
+        // Analyse updated database --> should uncomment the following two lines when step 2.3 has been implemented
+        //fs::path updatedFiles = "UpdatedFiles";
+        //analyseDatabase(updatedFiles);
 
-        std::cout << "Type in the max number of shapes per class to analyze:\n";
-        std::cin >> shape_limit;
+        // Normalization tool --> TODO (step 2.5)
 
-        std::vector<std::vector<int>> faces_vector;
-        std::vector<std::vector<int>> verts_vector;
-        std::vector<std::vector<int>> types_vector;
-
-        // 69 classes in total.. nice ;)
-        for (const auto& folder : fs::directory_iterator(objectFiles))
-        {
-            if (class_index >= class_limit)
-                continue;
-
-            int shape_index = 0;
-
-            // Only check directories
-            if (!folder.is_directory())
-                continue;
-
-            std::vector<int> faces;
-            std::vector<int> verts;
-            std::vector<int> types;
-
-            // Check every file in each subfolder
-            // This should only be the files of the shape in that folder / class
-            for (const auto& file : fs::directory_iterator(folder.path()))
-            {
-                // Only check the first 'limit' shapes of each class
-                if (shape_index >= shape_limit)
-                    continue;
-
-                fs::path selectedFile = file.path();
-                Mesh m = p.parseOFF(selectedFile.string());
-
-                if (selectedFile.empty())
-                {
-                    return -1;
-                }
-
-                faces.push_back(m.primsSize());
-                verts.push_back(m.vertsSize());
-
-                string type = "Mix of tris and quads";
-                if (m.quadsOnly)
-                {
-                    type = "Quads only";
-                    types.push_back(0);
-                }
-                else if (m.trisOnly)
-                {
-                    type = "Tris only";
-                    types.push_back(1);
-                }
-                else types.push_back(2);
-
-                std::cout << "Shape id: " << index << "\n";
-                std::cout << "Shape filename: " << file.path().filename() << "\n";
-                std::cout << "Class: " << folder.path().filename() << "\n";
-                std::cout << "Number of faces: " << m.primsSize() << "\n";
-                std::cout << "Number of vertices: " << m.vertsSize() << "\n";
-                std::cout << "Type of faces: " << type << "\n";
-                std::cout << "AABB: \n";
-                std::cout << "  min: " << m.minPoint.e[0] << " " << m.minPoint.e[1] << " " << m.minPoint.e[2] << "\n";
-                std::cout << "  max: " << m.maxPoint.e[0] << " " << m.maxPoint.e[1] << " " << m.maxPoint.e[2] << "\n";
-                std::cout << "\n";
-                shape_index++;
-                index++;
-            }
-
-            faces_vector.push_back(faces);
-            verts_vector.push_back(verts);
-            types_vector.push_back(types);
-
-            class_index++;
-        }
-
-        std::vector<int> faces = flatten(faces_vector);
-        std::vector<int> verts = flatten(verts_vector);
-        std::vector<int> types = flatten(types_vector);
-        
-        std::cout << "Export to CSV file? y/n\n";
-        char c;
-        std::cin >> c;
-
-        if (c == 'y')
-            exportToCSV(faces, verts, types);
-        else if (c != 'y' && c != 'n')
-            std::cout << "Invalid input. Try again.\n";
+        // Check if normalization tool works correctly --> should uncomment the following two lines when step 2.5 has been implemented
+        //fs::path translatedFiles = "TranslatedFiles";
+        //analyseDatabase(translatedFiles);
     }
 
     return 0;
