@@ -18,12 +18,29 @@ public:
 	Point3 maxPoint;
 	bool trisOnly;
 	bool quadsOnly;
+	std::vector<Primitive> primitives;
 
 	Mesh(const std::vector<Primitive>& prims, const std::vector<float>& verts, const int& numVerts) : primitives(prims), trivertsgl(verts), numVerts(numVerts)
 	{
-
+		
 	}
 
+	void updateGLBuffers() 
+	{
+		trivertsgl.clear();
+		trivertsgl.reserve(primitives.size() * 9);
+		for (const auto& prim : primitives)
+		{
+			for (const auto& vert : prim.vertices)
+			{
+				trivertsgl.push_back((float)vert.x());
+				trivertsgl.push_back((float)vert.y());
+				trivertsgl.push_back((float)vert.z());
+			}
+		}
+		numVerts = trivertsgl.size() / 3;
+	}
+	
 	void setLabel(const std::string& label) 
 	{
 		this->label = label;
@@ -50,7 +67,6 @@ public:
 	}
 
 private:
-	std::vector<Primitive> primitives;
 	std::string label;
 	int numVerts;
 };

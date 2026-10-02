@@ -137,6 +137,7 @@
   <ItemGroup>
     <ClCompile Include="glad.c" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="resampling.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="camera.h" />
@@ -144,6 +145,7 @@
     <ClInclude Include="object.h" />
     <ClInclude Include="parseobj.h" />
     <ClInclude Include="primitive.h" />
+    <ClInclude Include="resampling.h" />
     <ClInclude Include="vec3.h" />
   </ItemGroup>
   <ItemGroup>

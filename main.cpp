@@ -9,6 +9,7 @@
 #include "object.h"
 #include "camera.h"
 #include "fileSelector.h"
+#include "resampling.h"
 
 namespace fs = std::filesystem;
 
@@ -389,16 +390,6 @@ void analyseDatabase(std::vector<Mesh> meshes)
 
 // Resample functions
 
-void resampleMesh(Mesh& input)
-{
-    // TODO: step 2.3
-    // First, check if the mesh needs to be resampled --> set limits for #vertices that do not suffice
-    // According to the assignment, a good #vertices (or #samples) for a mesh is around 5k - 10k, but more research on this is needed
-    // If no need for resampling, return
-    // Else, resample according to the given algorithms in the assignment
-    // Upscale if too few, downscale if too many
-}
-
 std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes)
 {
     std::vector<Mesh> result;
@@ -416,12 +407,12 @@ std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes)
 
 void translateBarycenter(Mesh& input)
 {
-    auto triverts = input.trivertsgl;
-    auto x_total = 0, y_total = 0, z_total = 0;
+    auto& triverts = input.trivertsgl;
+    float x_total = 0.0f, y_total = 0.0f, z_total = 0.0f;
 
     // Calculate barycenter, which is the average of all points
     // First, we get the total sum of all points
-    for (int i = 0; i < triverts.size(); i += 3)
+    for (size_t i = 0; i < triverts.size(); i += 3)
     {
         x_total += triverts[i];
         y_total += triverts[i + 1];
@@ -430,34 +421,39 @@ void translateBarycenter(Mesh& input)
 
     // Then, we divide it by the total number of vertices
     auto total_verts = input.vertsSize();
-    x_total /= total_verts;
-    y_total /= total_verts;
-    z_total /= total_verts;
+    if (total_verts > 0)
+    {
+        x_total /= total_verts;
+        y_total /= total_verts;
+        z_total /= total_verts;
+    }
 
     // Finally, for each point, subtract the barycenter to get it centered
-    for (int i = 0; i < triverts.size(); i += 3)
+    for (size_t i = 0; i < triverts.size(); i += 3)
     {
-        triverts[i] =- x_total;
-        triverts[i + 1] =- y_total;
-        triverts[i + 2] =- z_total;
+        triverts[i] -= x_total;
+        triverts[i + 1] -= y_total;
+        triverts[i + 2] -= z_total;
     }
 }
 
 void scaleUniformly(Mesh& input)
 {
     // Find extent of axis-aligned bounding box of the shape
-    auto triverts = input.trivertsgl;
+    auto& triverts = input.trivertsgl;
+    if (triverts.empty()) return;
+
     float x_min, x_max, y_min, y_max, z_min, z_max;
 
     x_min = x_max = triverts[0];
     y_min = y_max = triverts[1];
     z_min = z_max = triverts[2];
 
-    for (int i = 0; i < triverts.size(); i += 3)
+    for (size_t i = 0; i < triverts.size(); i += 3)
     {
-        float x = triverts[0];
-        float y = triverts[1];
-        float z = triverts[2];
+        float x = triverts[i];
+        float y = triverts[i + 1];
+        float z = triverts[i + 2];
 
         x_min = std::min(x_min, x);
         x_max = std::max(x_max, x);
@@ -475,11 +471,11 @@ void scaleUniformly(Mesh& input)
 
     // Find largest dimension
     auto largest_dim = std::max({x_max - x_min, y_max - y_min, z_max - z_min});
+    if (largest_dim == 0.0f) return;
 
     // Scale all verts by (1 / largest_dim)
-    auto triverts = input.trivertsgl;
-    auto factor = 1 / largest_dim;
-    for (int i = 0; i < triverts.size(); i += 3)
+    auto factor = 1.0f / largest_dim;
+    for (size_t i = 0; i < triverts.size(); i += 3)
     {
         triverts[i] *= factor;
         triverts[i + 1] *= factor;
