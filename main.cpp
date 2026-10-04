@@ -34,10 +34,7 @@ void renderObject(fs::path selectedFile)
 {
     Parser p;
     Mesh obj = p.parseOFF(selectedFile.string());
-    float vertexCount = obj.trivertsgl.size() / 3;
-
-    //std::cout << obj.size() << std::endl;
-    //obj.show();
+    GLsizei vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
 
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -68,6 +65,21 @@ void renderObject(fs::path selectedFile)
 
     glViewport(0, 0, 800, 600);
     glEnable(GL_DEPTH_TEST);
+
+    // Print controls to console
+    std::cout << "\n=== Controls ===\n";
+    std::cout << "  Left Mouse Drag  : Orbit camera\n";
+    std::cout << "  Right Mouse Drag : Pan camera\n";
+    std::cout << "  Scroll Wheel     : Zoom\n";
+    std::cout << "  W / A / S / D    : Move camera\n";
+    std::cout << "  1                : Toggle Edges\n";
+    std::cout << "  2                : Toggle Vertices\n";
+    std::cout << "  3                : Toggle Faces\n";
+    std::cout << "  L                : 1 Step Loop Subdivision (Upsample)\n";
+    std::cout << "  U                : 1 Step Simple Subdivision (Upsample)\n";
+    std::cout << "  K                : 1 Step Decimation (Downsample)\n";
+    std::cout << "  R                : Auto Resample (target 5k - 10k vertices)\n";
+    std::cout << "================\n\n";
 
     // Load in mesh
     std::vector<float> vertices = obj.trivertsgl;
@@ -121,14 +133,90 @@ void renderObject(fs::path selectedFile)
         float deltaTime = currentFrameTime - lastFrameTime;
         lastFrameTime = currentFrameTime;
 
-        // Process keyboard input
+        // Process camera input
         processCameraKeyboard(window, deltaTime);
+
+        // Process resampling input
+        static bool lKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
+        {
+            if (!lKeyPressed)
+            {
+                lKeyPressed = true;
+                std::cout << "\n[Resample] Performing 1 step of Loop subdivision..." << std::endl;
+                upsampleMeshLoop(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_L) == GLFW_RELEASE)
+        {
+            lKeyPressed = false;
+        }
+
+        static bool uKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS)
+        {
+            if (!uKeyPressed)
+            {
+                uKeyPressed = true;
+                std::cout << "\n[Resample] Performing 1 step of Simple subdivision..." << std::endl;
+                upsampleMeshSimple(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_U) == GLFW_RELEASE)
+        {
+            uKeyPressed = false;
+        }
+
+        static bool kKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
+        {
+            if (!kKeyPressed)
+            {
+                kKeyPressed = true;
+                std::cout << "\n[Resample] Performing 1 step of Downsampling (Decimation)..." << std::endl;
+                downsampleMesh(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_K) == GLFW_RELEASE)
+        {
+            kKeyPressed = false;
+        }
+
+        static bool rKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS)
+        {
+            if (!rKeyPressed)
+            {
+                rKeyPressed = true;
+                std::cout << "\n[Resample] Auto-resampling mesh towards 5k - 10k vertices..." << std::endl;
+                resampleMesh(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_RELEASE)
+        {
+            rKeyPressed = false;
+        }
 
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
-        glUseProgram(fragmentShader);
 
         // Get camera position
         glm::vec3 cameraPos, camRight, camUp;
@@ -175,11 +263,9 @@ void renderObject(fs::path selectedFile)
             glDrawArrays(GL_POINTS, 0, vertexCount);
         }
 
-
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
-
 
     // Clean memory
     glDeleteVertexArrays(1, &VAO);
@@ -271,7 +357,7 @@ std::vector<Mesh> parseDatabase(fs::path path)
 
     std::cout << "Parsing database..\n";
 
-    // 69 classes in total.. nice ;)
+    // 69 classes in total in the database
     for (const auto& folder : fs::directory_iterator(path))
     {
         if (class_index >= class_limit)
@@ -344,7 +430,7 @@ void analyseDatabase(std::vector<Mesh> meshes)
     std::vector<int> verts;
     std::vector<int> types;
 
-    // 69 classes in total.. nice ;)
+    // 69 classes in total in the database
     for (Mesh m : meshes)
     {
         faces.push_back(m.primsSize());
@@ -407,80 +493,54 @@ std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes)
 
 void translateBarycenter(Mesh& input)
 {
-    auto& triverts = input.trivertsgl;
-    float x_total = 0.0f, y_total = 0.0f, z_total = 0.0f;
+    if (input.vertices.empty()) return;
 
-    // Calculate barycenter, which is the average of all points
-    // First, we get the total sum of all points
-    for (size_t i = 0; i < triverts.size(); i += 3)
-    {
-        x_total += triverts[i];
-        y_total += triverts[i + 1];
-        z_total += triverts[i + 2];
+    Point3 barycenter(0, 0, 0);
+    for (const auto& v : input.vertices) {
+        barycenter += v;
+    }
+    barycenter /= static_cast<double>(input.vertices.size());
+
+    // translate the unique vertices
+    for (auto& v : input.vertices) {
+        v -= barycenter;
     }
 
-    // Then, we divide it by the total number of vertices
-    auto total_verts = input.vertsSize();
-    if (total_verts > 0)
-    {
-        x_total /= total_verts;
-        y_total /= total_verts;
-        z_total /= total_verts;
-    }
-
-    // Finally, for each point, subtract the barycenter to get it centered
-    for (size_t i = 0; i < triverts.size(); i += 3)
-    {
-        triverts[i] -= x_total;
-        triverts[i + 1] -= y_total;
-        triverts[i + 2] -= z_total;
-    }
+    input.updateGLBuffers();
 }
 
 void scaleUniformly(Mesh& input)
 {
-    // Find extent of axis-aligned bounding box of the shape
-    auto& triverts = input.trivertsgl;
-    if (triverts.empty()) return;
+    if (input.vertices.empty()) return;
 
     float x_min, x_max, y_min, y_max, z_min, z_max;
+    x_min = x_max = static_cast<float>(input.vertices[0].x());
+    y_min = y_max = static_cast<float>(input.vertices[0].y());
+    z_min = z_max = static_cast<float>(input.vertices[0].z());
 
-    x_min = x_max = triverts[0];
-    y_min = y_max = triverts[1];
-    z_min = z_max = triverts[2];
-
-    for (size_t i = 0; i < triverts.size(); i += 3)
+    for (const auto& v : input.vertices)
     {
-        float x = triverts[i];
-        float y = triverts[i + 1];
-        float z = triverts[i + 2];
-
-        x_min = std::min(x_min, x);
-        x_max = std::max(x_max, x);
-
-        y_min = std::min(y_min, y);
-        y_max = std::max(y_max, y);
-
-        z_min = std::min(z_min, z);
-        z_max = std::max(z_max, z);
+        x_min = std::min(x_min, static_cast<float>(v.x()));
+        x_max = std::max(x_max, static_cast<float>(v.x()));
+        y_min = std::min(y_min, static_cast<float>(v.y()));
+        y_max = std::max(y_max, static_cast<float>(v.y()));
+        z_min = std::min(z_min, static_cast<float>(v.z()));
+        z_max = std::max(z_max, static_cast<float>(v.z()));
     }
 
-    // Update AABB for the mesh
     input.minPoint = Point3(x_min, y_min, z_min);
     input.maxPoint = Point3(x_max, y_max, z_max);
 
-    // Find largest dimension
-    auto largest_dim = std::max({x_max - x_min, y_max - y_min, z_max - z_min});
+    float largest_dim = std::max({x_max - x_min, y_max - y_min, z_max - z_min});
     if (largest_dim == 0.0f) return;
 
-    // Scale all verts by (1 / largest_dim)
-    auto factor = 1.0f / largest_dim;
-    for (size_t i = 0; i < triverts.size(); i += 3)
+    double factor = 1.0 / largest_dim;
+    for (auto& v : input.vertices)
     {
-        triverts[i] *= factor;
-        triverts[i + 1] *= factor;
-        triverts[i + 2] *= factor;
+        v *= factor;
     }
+
+    input.updateGLBuffers();
 }
 
 void alignAxes(Mesh& input)
@@ -518,8 +578,6 @@ std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
 
 int main()
 {
-    Parser p;
-
     std::cout << "Multimedia Retrieval tool\n";
     std::cout << "Select mode to begin: \n";
     std::cout << "1. Rendering mode\n";

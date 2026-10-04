@@ -6,67 +6,69 @@
 #include "primitive.h"
 #include <string>
 
+struct Face
+{
+	std::vector<int> v;
+};
 
 /// <summary>
-/// Object is list of primitives (triangles and quads) with label
+/// 3D Mesh represented as an indexed face set with vertices and faces
 /// </summary>
 class Mesh 
 {
 public:
+	std::vector<Point3> vertices;
+	std::vector<Face> faces;
 	std::vector<float> trivertsgl;
+	
 	Point3 minPoint;
 	Point3 maxPoint;
 	bool trisOnly;
 	bool quadsOnly;
-	std::vector<Primitive> primitives;
 
-	Mesh(const std::vector<Primitive>& prims, const std::vector<float>& verts, const int& numVerts) : primitives(prims), trivertsgl(verts), numVerts(numVerts)
+	Mesh() = default;
+	
+	Mesh(const std::vector<Point3>& verts, const std::vector<Face>& fcs): vertices(verts), faces(fcs)
 	{
-		
+		updateGLBuffers();
 	}
 
 	void updateGLBuffers() 
 	{
 		trivertsgl.clear();
-		trivertsgl.reserve(primitives.size() * 9);
-		for (const auto& prim : primitives)
+		trivertsgl.reserve(faces.size() * 9); // Estimate for triangle vertices
+
+		for (const auto& face : faces)
 		{
-			for (const auto& vert : prim.vertices)
+			if (face.v.size() == 3)
 			{
-				trivertsgl.push_back((float)vert.x());
-				trivertsgl.push_back((float)vert.y());
-				trivertsgl.push_back((float)vert.z());
+				for (int idx : face.v)
+				{
+					trivertsgl.push_back((float)vertices[idx].x());
+					trivertsgl.push_back((float)vertices[idx].y());
+					trivertsgl.push_back((float)vertices[idx].z());
+				}
+			}
+			else if (face.v.size() == 4)
+			{
+				// Convert quad (0, 1, 2, 3) to 2 triangles for OpenGL: (0, 1, 2) and (0, 2, 3)
+				int quadIdx[6] = { face.v[0], face.v[1], face.v[2], face.v[0], face.v[2], face.v[3] };
+				for (int idx : quadIdx)
+				{
+					trivertsgl.push_back((float)vertices[idx].x());
+					trivertsgl.push_back((float)vertices[idx].y());
+					trivertsgl.push_back((float)vertices[idx].z());
+				}
 			}
 		}
-		numVerts = trivertsgl.size() / 3;
 	}
 	
-	void setLabel(const std::string& label) 
-	{
-		this->label = label;
-	}
+	int primsSize() const { return (int)faces.size(); }
+	int vertsSize() const { return (int)vertices.size(); }
 
-	std::string getLabel()
-	{
-		return label;
-	}
-
-	int primsSize() 
-	{
-		return primitives.size();
-	}
-
-	int vertsSize()
-	{
-		return numVerts;
-	}
-
-	void show()
-	{
-		for (int i = 0; i < primitives.size(); i++) primitives[i].show();
-	}
+	void setLabel(const std::string& l) { label = l; }
+	std::string getLabel() const { return label; }
 
 private:
 	std::string label;
-	int numVerts;
 };
