@@ -18,17 +18,48 @@ namespace fs = std::filesystem;
 const char* vertexShaderSource = "#version 330 core\n"
 "layout (location = 0) in vec3 aPos;\n"
 "uniform mat4 uMVP;\n"
+"uniform mat4 uModelView;\n"
+"out vec3 FragPosEye;\n"
 "void main()\n"
 "{\n"
+"   FragPosEye = vec3(uModelView * vec4(aPos, 1.0));\n"
 "   gl_Position = uMVP * vec4(aPos, 1.0);\n"
 "}\0";
+
 const char* fragmentShaderSource = "#version 330 core\n"
+"in vec3 FragPosEye;\n"
 "uniform vec4 uColor;\n"
+"uniform bool uUseLighting;\n"
 "out vec4 FragColor;\n"
 "void main()\n"
 "{\n"
-"   FragColor = uColor;\n"
+"   if (!uUseLighting) {\n"
+"       FragColor = uColor;\n"
+"       return;\n"
+"   }\n"
+"   // Compute face normal using screen-space derivatives\n"
+"   vec3 normal = normalize(cross(dFdx(FragPosEye), dFdy(FragPosEye)));\n"
+"   if (normal.z < 0.0) normal = -normal;\n" // Ensure normal points towards camera
+"\n"
+"   // Directional light from slightly above and right of camera\n"
+"   vec3 lightDir = normalize(vec3(0.3, 0.6, 0.8));\n"
+"   vec3 viewDir = normalize(-FragPosEye);\n"
+"\n"
+"   // 1. Ambient\n"
+"   vec3 ambient = 0.25 * uColor.rgb;\n"
+"\n"
+"   // 2. Diffuse\n"
+"   float diff = max(dot(normal, lightDir), 0.0);\n"
+"   vec3 diffuse = diff * uColor.rgb;\n"
+"\n"
+"   // 3. Specular (Blinn-Phong)\n"
+"   vec3 halfwayDir = normalize(lightDir + viewDir);\n"
+"   float spec = pow(max(dot(normal, halfwayDir), 0.0), 32.0);\n"
+"   vec3 specular = vec3(0.2) * spec;\n"
+"\n"
+"   FragColor = vec4(ambient + diffuse + specular, uColor.a);\n"
 "}\n\0";
+
 
 void renderObject(fs::path selectedFile)
 {
@@ -121,6 +152,8 @@ void renderObject(fs::path selectedFile)
     // Show window
     // Render loop
     int mvpLoc = glGetUniformLocation(shaderProgram, "uMVP");
+    int modelViewLoc = glGetUniformLocation(shaderProgram, "uModelView");
+    int useLightingLoc = glGetUniformLocation(shaderProgram, "uUseLighting");
     GLint colorLoc = glGetUniformLocation(shaderProgram, "uColor");
     std::cout << "colorLoc = " << colorLoc << std::endl;
 
@@ -225,6 +258,8 @@ void renderObject(fs::path selectedFile)
         // Build matrices
         glm::mat4 model = glm::mat4(1.0f);
         glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 modelView = view * model;
+
 
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
@@ -234,34 +269,39 @@ void renderObject(fs::path selectedFile)
 
         // Write to shader
         glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
+        glUniformMatrix4fv(modelViewLoc, 1, GL_FALSE, glm::value_ptr(modelView));
 
         // Draw models
         glBindVertexArray(VAO);
-
-        // Draw face
+        
+        // Draw faces (with shading)
         if (showFace)
         {
+            glUniform1i(useLightingLoc, 1);
             glUniform4f(colorLoc, 1.0f, 0.5f, 0.2f, 1.0f);
             glDrawArrays(GL_TRIANGLES, 0, vertexCount);
         }
 
-        // Draw edges
+        // Draw edges (unlit)
         if (showEdge)
         {
-            glUniform4f(colorLoc, 0.5f, 0.25f, 0.1f, 1.0f);
+            glUniform1i(useLightingLoc, 0);
+            glUniform4f(colorLoc, 0.2f, 0.1f, 0.05f, 1.0f);
             glLineWidth(2.0f);
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
             glDrawArrays(GL_TRIANGLES, 0, vertexCount);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
 
-        // Draw node
+        // Draw nodes (unlit)
         if (showNode)
         {
-            glUniform4f(colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+            glUniform1i(useLightingLoc, 0);
+            glUniform4f(colorLoc, 0.0f, 0.0f, 0.0f, 1.0f);
             glPointSize(4.0f);
             glDrawArrays(GL_POINTS, 0, vertexCount);
         }
+
 
         glfwSwapBuffers(window);
         glfwPollEvents();
