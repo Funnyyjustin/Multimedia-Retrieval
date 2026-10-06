@@ -297,7 +297,7 @@ void renderObject(fs::path selectedFile)
         if (showNode)
         {
             glUniform1i(useLightingLoc, 0);
-            glUniform4f(colorLoc, 0.0f, 0.0f, 0.0f, 1.0f);
+            glUniform4f(colorLoc, 1.0f, 0.0f, 0.0f, 1.0f);
             glPointSize(4.0f);
             glDrawArrays(GL_POINTS, 0, vertexCount);
         }
