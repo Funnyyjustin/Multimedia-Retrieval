@@ -635,34 +635,34 @@ std::vector<std::vector<float>> getDataDeviations()
     {
         string line;
         std::getline(file, line); // skip headers
-        int count = 0;
         while (std::getline(file, line))
         {
             std::vector<float> row;
-            row.push_back(count);
             std::stringstream ss(line);
 
             string word;
+            float f;
             // read id
-            std::getline(ss, word, ',');
-            row.push_back(std::stof(word));
-            sumFaces += std::stof(word);
+            std::getline(ss, word, ';');
+            f = std::stof(word);
+            row.push_back(f);
             
             // read number of faces for current shape
-            std::getline(ss, word, ',');
-            row.push_back(std::stof(word));
-            sumVerts += std::stof(word);
+            std::getline(ss, word, ';');
+            f = std::stof(word);
+            row.push_back(f);
+            sumFaces += f;
 
             // read number of vertices for current shape
-            std::getline(ss, word, ',');
-            row.push_back(std::stof(word));
-            sumFaces += std::stof(word);
+            std::getline(ss, word, ';');
+            f = std::stof(word);
+            row.push_back(f);
+            sumVerts += f;
 
             total++;
             data.push_back(row);
         }
     }
-
 
     // calculate the standard deviation for the faces and vertices
     float avgFaces = sumFaces / total;
@@ -689,6 +689,8 @@ std::vector<std::vector<float>> getDataDeviations()
         data[i][1] = (data[i][1] - avgFaces) / sigmaFaces;
         data[i][2] = (data[i][2] - avgVerts) / sigmaVerts;
     }
+
+    
 
     return data;
 }
@@ -748,9 +750,10 @@ int main()
         std::cout << "Read csv and calculated standard deviations" << std::endl;
         // after sorting, low number of deviations away from average are low indeces and high number of deviations away are high indeces
         quicksort(dataDeviations, 2, 0, dataDeviations.size() - 1);
-        for (vector<float> elem : dataDeviations)
+        for (int i = 0; i < 5; i++)
         {
-            cout << elem[0] << endl;
+            auto elem = dataDeviations[dataDeviations.size() - 1 - i];
+            cout << elem[0] << " " << elem[1] << " " << elem[2] << endl;
         }
         renderObject(dataDeviations[dataDeviations.size() - 1][0]);
     }
