@@ -686,8 +686,8 @@ std::vector<std::vector<float>> getDataDeviations()
     // calculate for each shape how many standard deviations from average
     for (int i = 0; i < data.size(); i++)
     {
-        data[i][1] = (data[i][1] - avgFaces) / sigmaFaces;
-        data[i][2] = (data[i][2] - avgVerts) / sigmaVerts;
+        data[i][1] = fabs(data[i][1] - avgFaces) / sigmaFaces;
+        data[i][2] = fabs(data[i][2] - avgVerts) / sigmaVerts;
     }
 
     
@@ -749,7 +749,7 @@ int main()
         std::vector<std::vector<float>> dataDeviations = getDataDeviations();
         std::cout << "Read csv and calculated standard deviations" << std::endl;
         // after sorting, low number of deviations away from average are low indeces and high number of deviations away are high indeces
-        quicksort(dataDeviations, 2, 0, dataDeviations.size() - 1);
+        quicksort(dataDeviations, 1, 0, dataDeviations.size() - 1);
         for (int i = 0; i < 5; i++)
         {
             auto elem = dataDeviations[dataDeviations.size() - 1 - i];

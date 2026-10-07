@@ -14,7 +14,7 @@ inline void swap(std::vector<std::vector<float>>& vec, int a, int b)
 // quicksort adapted from https://www.geeksforgeeks.org/cpp/cpp-program-for-quicksort/
 inline int partition(std::vector<std::vector<float>>& vec, int index, int low, int high)
 {
-	int pivot = vec[high][index];
+	float pivot = vec[high][index];
 
 	int i = low - 1;
 
@@ -23,11 +23,11 @@ inline int partition(std::vector<std::vector<float>>& vec, int index, int low, i
 		if (vec[j][index] <= pivot)
 		{
 			i++;
-			swap(vec[i], vec[j]);
+			std::swap(vec[i], vec[j]);
 		}
 	}
 
-	swap(vec[i + 1], vec[high]);
+	std::swap(vec[i + 1], vec[high]);
 
 	return i + 1;
 }
