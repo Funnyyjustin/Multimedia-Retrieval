@@ -140,11 +140,13 @@
     <ClCompile Include="resampling.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BinarySearch.h" />
     <ClInclude Include="camera.h" />
     <ClInclude Include="fileSelector.h" />
     <ClInclude Include="object.h" />
     <ClInclude Include="parseobj.h" />
     <ClInclude Include="primitive.h" />
+    <ClInclude Include="QuickSort.h" />
     <ClInclude Include="resampling.h" />
     <ClInclude Include="vec3.h" />
   </ItemGroup>

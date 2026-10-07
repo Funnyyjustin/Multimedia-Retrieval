@@ -10,6 +10,8 @@
 #include "camera.h"
 #include "fileSelector.h"
 #include "resampling.h"
+#include "QuickSort.h"
+#include "BinarySearch.h"
 
 namespace fs = std::filesystem;
 
@@ -317,6 +319,12 @@ void renderObject(fs::path selectedFile)
 
 // Helper functions
 
+void renderObject(int id)
+{
+    fs::path path = selectModelFile(id);
+    renderObject(path);
+}
+
 std::vector<int> flatten(std::vector<std::vector<int>>& vec)
 {
     std::vector<int> result;
@@ -614,6 +622,77 @@ std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
     return result;
 }
 
+std::vector<std::vector<float>> getDataDeviations()
+{
+    std::ifstream file("histograms.csv");
+    std::vector<std::vector<float>> data;
+    float sumFaces = 0;
+    float sumVerts = 0;
+    int total = 0;
+
+    // Read csv file
+    if (file.is_open())
+    {
+        string line;
+        std::getline(file, line); // skip headers
+        int count = 0;
+        while (std::getline(file, line))
+        {
+            std::vector<float> row;
+            row.push_back(count);
+            std::stringstream ss(line);
+
+            string word;
+            // read id
+            std::getline(ss, word, ',');
+            row.push_back(std::stof(word));
+            sumFaces += std::stof(word);
+            
+            // read number of faces for current shape
+            std::getline(ss, word, ',');
+            row.push_back(std::stof(word));
+            sumVerts += std::stof(word);
+
+            // read number of vertices for current shape
+            std::getline(ss, word, ',');
+            row.push_back(std::stof(word));
+            sumFaces += std::stof(word);
+
+            total++;
+            data.push_back(row);
+        }
+    }
+
+
+    // calculate the standard deviation for the faces and vertices
+    float avgFaces = sumFaces / total;
+    float avgVerts = sumVerts / total;
+
+    float facesSTDsum = 0;
+    float vertsSTDsum = 0;
+
+    for (int i = 0; i < data.size(); i++) 
+    {
+        facesSTDsum += powf(data[i][1] - avgFaces, 2);
+        vertsSTDsum += powf(data[i][2] - avgVerts, 2);
+    }
+
+    facesSTDsum /= total;
+    vertsSTDsum /= total;
+
+    float sigmaFaces = sqrtf(facesSTDsum);
+    float sigmaVerts = sqrtf(vertsSTDsum);
+
+    // calculate for each shape how many standard deviations from average
+    for (int i = 0; i < data.size(); i++)
+    {
+        data[i][1] = (data[i][1] - avgFaces) / sigmaFaces;
+        data[i][2] = (data[i][2] - avgVerts) / sigmaVerts;
+    }
+
+    return data;
+}
+
 // Main functions
 
 int main()
@@ -622,6 +701,7 @@ int main()
     std::cout << "Select mode to begin: \n";
     std::cout << "1. Rendering mode\n";
     std::cout << "2. Analyse mode\n";
+    std::cout << "3. Analysis results\n";
     
     int num;
     std::cin >> num;
@@ -659,6 +739,20 @@ int main()
 
         // Check if normalization tool works correctly
         //analyseDatabase(normalized_meshes);
+    }
+
+    else if (num == 3)
+    {
+        std::cout << "Reading .csv file..." << std::endl;
+        std::vector<std::vector<float>> dataDeviations = getDataDeviations();
+        std::cout << "Read csv and calculated standard deviations" << std::endl;
+        // after sorting, low number of deviations away from average are low indeces and high number of deviations away are high indeces
+        quicksort(dataDeviations, 2, 0, dataDeviations.size() - 1);
+        for (vector<float> elem : dataDeviations)
+        {
+            cout << elem[0] << endl;
+        }
+        renderObject(dataDeviations[dataDeviations.size() - 1][0]);
     }
 
     return 0;
