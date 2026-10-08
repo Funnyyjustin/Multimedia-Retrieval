@@ -154,6 +154,7 @@ void upsampleMeshLoop(Mesh& input)
     // Update neighbours and edge points
     std::vector<Point3> neighborSum(oldVerts.size(), Point3(0, 0, 0));
     std::vector<int> valence(oldVerts.size(), 0);
+    std::vector<std::vector<int>> boundaryNeighbors(oldVerts.size());
     std::vector<Point3> newPositions;
     newPositions.reserve(oldVerts.size() + edgeMap.size());
     newPositions = oldVerts;
@@ -163,6 +164,12 @@ void upsampleMeshLoop(Mesh& input)
         FastEdge& edge = pair.second;
         int u = edge.u;
         int v = edge.v;
+        
+        if (edge.w2 == -1) {
+            boundaryNeighbors[u].push_back(v);
+            boundaryNeighbors[v].push_back(u);
+        }
+        
         const Point3& Pu = oldVerts[u];
         const Point3& Pv = oldVerts[v];
 
@@ -184,10 +191,18 @@ void upsampleMeshLoop(Mesh& input)
 
     // 3. Vertex smoothing
     for (size_t i = 0; i < oldVerts.size(); ++i) {
-        int n = valence[i];
-        if (n > 0) {
-            float alpha = calculateAlpha(n);
-            newPositions[i] = oldVerts[i] * (1.0 - n * alpha) + neighborSum[i] * alpha;
+        if (boundaryNeighbors[i].size() == 2) {
+            int b1 = boundaryNeighbors[i][0];
+            int b2 = boundaryNeighbors[i][1];
+            newPositions[i] = oldVerts[i] * 0.75f + (oldVerts[b1] + oldVerts[b2]) * 0.125f;
+        } else if (!boundaryNeighbors[i].empty()) {
+            newPositions[i] = oldVerts[i];
+        } else {
+            int n = valence[i];
+            if (n > 0) {
+                float alpha = calculateAlpha(n);
+                newPositions[i] = oldVerts[i] * (1.0f - n * alpha) + neighborSum[i] * alpha;
+            }
         }
     }
 
@@ -283,7 +298,6 @@ void downsampleMesh(Mesh& input)
         for (int fIdx : vertexFaces[u])
         {
             if (faceRemoved[fIdx]) continue;
-
             auto& face = input.faces[fIdx];
 
             // If face contains both u and v, it degenerates into a line segment
