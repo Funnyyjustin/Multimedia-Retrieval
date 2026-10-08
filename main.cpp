@@ -339,14 +339,14 @@ std::vector<Mesh> flatten(std::vector<std::vector<Mesh>>& vec)
     return result;
 }
 
-void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, const std::vector<int>& types, std::string filename)
+void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, const std::vector<int>& types, const std::vector<Point3>& barycentres, const std::vector<Vec3> scales, std::string filename)
 {
     std::ofstream file(filename + ".csv");
 
     if (!file.is_open())
         return;
 
-    file << "Shape id; Number of faces; Number of vertices; Face type\n";
+    file << "Shape id; Number of faces; Number of vertices; Face type; Barycentre X; Barycentre Y; Barycenter Z; Scale X; Scale Y; Scale Z\n";
 
     size_t maxSize = std::max({ faces.size(), verts.size(), types.size() });
 
@@ -366,6 +366,36 @@ void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, c
 
         if (i < types.size())
             file << types[i];
+
+        file << ";";
+
+        if (i < barycentres.size())
+        {
+            file << barycentres[i].x();
+            file << ";";
+            file << barycentres[i].y();
+            file << ";";
+            file << barycentres[i].z();
+        } else
+        {
+            file << ";";
+            file << ";";
+        }
+        
+        file << ";";
+        
+        if (i < scales.size())
+        {
+            file << scales[i].x();
+            file << ";";
+            file << scales[i].y();
+            file << ";";
+            file << scales[i].z();
+        } else
+        {
+            file << ";";
+            file << ";";
+        }
 
         file << "\n";
     }
@@ -397,6 +427,8 @@ std::vector<Mesh> parseDatabase(fs::path path)
 
     std::cout << "Parsing database..\n";
 
+    
+
     // 69 classes in total in the database
     for (const auto& folder : fs::directory_iterator(path))
     {
@@ -422,7 +454,8 @@ std::vector<Mesh> parseDatabase(fs::path path)
             if (shape_index >= shape_limit)
                 continue;
 
-            std::cout << "Parsing file " << index << ".\n";
+            if ((index % 100) == 0)
+                std::cout << "Parsing file " << index << ".\n";
 
             fs::path selectedFile = file.path();
             Mesh m = p.parseOFF(selectedFile.string());
@@ -469,6 +502,8 @@ void analyseDatabase(std::vector<Mesh> meshes)
     std::vector<int> faces;
     std::vector<int> verts;
     std::vector<int> types;
+    std::vector<Point3> barycentres;
+    std::vector<Vec3> scales;
 
     // 69 classes in total in the database
     for (Mesh m : meshes)
@@ -476,6 +511,7 @@ void analyseDatabase(std::vector<Mesh> meshes)
         faces.push_back(m.primsSize());
         verts.push_back(m.vertsSize());
 
+        //calculate type
         string type = "Mix of tris and quads";
         if (m.quadsOnly)
         {
@@ -489,6 +525,17 @@ void analyseDatabase(std::vector<Mesh> meshes)
         }
         else types.push_back(2);
 
+        //calculate barycenters
+        Point3 cumulative_point;
+        for (Point3 point: m.vertices)
+        {
+            cumulative_point += point;
+        }
+        cumulative_point /= m.vertices.size();
+        barycentres.push_back(cumulative_point);
+
+        scales.push_back({m.maxPoint - m.minPoint});
+        
         std::cout << "Class: " << m.getLabel() << "\n";
         std::cout << "Number of faces: " << m.primsSize() << "\n";
         std::cout << "Number of vertices: " << m.vertsSize() << "\n";
@@ -508,7 +555,7 @@ void analyseDatabase(std::vector<Mesh> meshes)
         std::cout << "Enter CSV file name:\n";
         std::string filename;
         std::cin >> filename;
-        exportToCSV(faces, verts, types, filename);
+        exportToCSV(faces, verts, types, barycentres, scales, filename);
     }
     else if (c != 'y' && c != 'n')
         std::cout << "Invalid input. Try again.\n";
@@ -605,6 +652,7 @@ std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
 {
     std::vector<Mesh> result;
 
+    resampleMeshes(meshes);
     for (Mesh m : meshes)
     {
         normalizeMesh(m);
@@ -646,7 +694,8 @@ int main()
         // Analyse initial database
         fs::path objectFiles = "ObjectFiles";
         std::vector<Mesh> original_meshes = parseDatabase(objectFiles);
-        analyseDatabase(original_meshes);
+        std::vector<Mesh> resampled_meshes = resampleMeshes(original_meshes);
+        analyseDatabase(resampled_meshes);
 
         // Resample outliers
         //std::vector<Mesh> resampled_meshes = resampleMeshes(original_meshes);
