@@ -5,6 +5,8 @@
 #include <vector>
 #include <algorithm>
 #include <limits>
+#include <omp.h>
+#include <atomic>
 #include "parseobj.h"
 #include "object.h"
 #include "camera.h"
@@ -339,7 +341,7 @@ std::vector<Mesh> flatten(std::vector<std::vector<Mesh>>& vec)
     return result;
 }
 
-void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, const std::vector<int>& types, const std::vector<Point3>& barycentres, const std::vector<Vec3> scales, std::string filename)
+void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, const std::vector<int>& types, const std::vector<Point3>& barycentres, const std::vector<Vec3>& scales, const std::string& filename)
 {
     std::ofstream file(filename + ".csv");
 
@@ -405,11 +407,6 @@ void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, c
 
 std::vector<Mesh> parseDatabase(fs::path path)
 {
-    Parser p;
-    int index = 0;
-
-    int class_index = 0;
-
     int shape_limit = 0;
     int class_limit = 0;
 
@@ -419,126 +416,106 @@ std::vector<Mesh> parseDatabase(fs::path path)
     std::cout << "Type in the max number of shapes per class to parse (0-100):\n";
     std::cin >> shape_limit;
 
-    std::vector<std::vector<int>> faces_vector;
-    std::vector<std::vector<int>> verts_vector;
-    std::vector<std::vector<int>> types_vector;
+    struct Task {
+        fs::path filePath;
+        std::string className;
+    };
+    std::vector<Task> tasks;
 
-    std::vector<std::vector<Mesh>> meshes_vector;
+    std::cout << "Scanning database files...\n";
 
-    std::cout << "Parsing database..\n";
-
-    
-
-    // 69 classes in total in the database
+    int class_index = 0;
     for (const auto& folder : fs::directory_iterator(path))
     {
         if (class_index >= class_limit)
-            continue;
+            break;
 
-        // Only check directories
         if (!folder.is_directory())
             continue;
 
         int shape_index = 0;
-
-        std::vector<int> faces;
-        std::vector<int> verts;
-        std::vector<int> types;
-
-        std::vector<Mesh> meshes;
-
-        // Check every file in each subfolder
-        // This should only be the files of the shape in that folder / class
         for (const auto& file : fs::directory_iterator(folder.path()))
         {
             if (shape_index >= shape_limit)
-                continue;
+                break;
 
-            if ((index % 100) == 0)
-                std::cout << "Parsing file " << index << ".\n";
-
-            fs::path selectedFile = file.path();
-            Mesh m = p.parseOFF(selectedFile.string());
-            m.setLabel(folder.path().filename().string());
-            meshes.push_back(m);
-
-            if (selectedFile.empty())
-            {
-                std::cout << "File is empty.\n";
-                continue;
-            }
-
-            faces.push_back(m.primsSize());
-            verts.push_back(m.vertsSize());
-
-            if (m.quadsOnly) types.push_back(0);
-            else if (m.trisOnly) types.push_back(1);
-            else types.push_back(2);
-
+            tasks.push_back({ file.path(), folder.path().filename().string() });
             shape_index++;
-            index++;
         }
-
-        faces_vector.push_back(faces);
-        verts_vector.push_back(verts);
-        types_vector.push_back(types);
-
-        meshes_vector.push_back(meshes);
 
         class_index++;
     }
 
-    std::vector<Mesh> meshes = flatten(meshes_vector);
+    int total = static_cast<int>(tasks.size());
+    std::vector<Mesh> meshes(total);
+    std::atomic<int> parsedCount{0};
+
+    std::cout << "Parsing " << total << " files in parallel...\n";
+
+    #pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < total; ++i)
+    {
+        Parser p;
+        meshes[i] = p.parseOFF(tasks[i].filePath.string());
+        meshes[i].setLabel(tasks[i].className);
+
+        int done = ++parsedCount;
+        if (done % 100 == 0 || done == total)
+        {
+            #pragma omp critical
+            std::cout << "[Parsing] Completed " << done << " / " << total << " files.\n";
+        }
+    }
 
     std::cout << "Finished parsing database.\n";
-
     return meshes;
 }
 
-void analyseDatabase(std::vector<Mesh> meshes)
+void analyseDatabase(const std::vector<Mesh>& meshes)
 {
     std::cout << "Analysing database..\n";
 
-    std::vector<int> faces;
-    std::vector<int> verts;
-    std::vector<int> types;
-    std::vector<Point3> barycentres;
-    std::vector<Vec3> scales;
+    int n = static_cast<int>(meshes.size());
+    std::vector<int> faces(n);
+    std::vector<int> verts(n);
+    std::vector<int> types(n);
+    std::vector<Point3> barycentres(n);
+    std::vector<Vec3> scales(n);
 
-    // 69 classes in total in the database
-    for (Mesh m : meshes)
+    // Compute metrics in parallel
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < n; ++i)
     {
-        faces.push_back(m.primsSize());
-        verts.push_back(m.vertsSize());
+        const Mesh& m = meshes[i];
+        faces[i] = m.primsSize();
+        verts[i] = m.vertsSize();
 
-        //calculate type
-        string type = "Mix of tris and quads";
-        if (m.quadsOnly)
-        {
-            type = "Quads only";
-            types.push_back(0);
-        }
-        else if (m.trisOnly)
-        {
-            type = "Tris only";
-            types.push_back(1);
-        }
-        else types.push_back(2);
+        if (m.quadsOnly) types[i] = 0;
+        else if (m.trisOnly) types[i] = 1;
+        else types[i] = 2;
 
-        //calculate barycenters
         Point3 cumulative_point(0, 0, 0);
         for (const auto& point : m.vertices)
         {
             cumulative_point += point;
         }
-        cumulative_point /= m.vertices.size();
-        barycentres.push_back(cumulative_point);
+        if (!m.vertices.empty())
+        {
+            cumulative_point /= static_cast<double>(m.vertices.size());
+        }
+        barycentres[i] = cumulative_point;
 
-        scales.push_back({m.maxPoint - m.minPoint});
-        
+        scales[i] = { m.maxPoint - m.minPoint };
+    }
+
+    // Print summary to console cleanly
+    for (int i = 0; i < n; ++i)
+    {
+        const Mesh& m = meshes[i];
+        std::string type = (types[i] == 0) ? "Quads only" : (types[i] == 1 ? "Tris only" : "Mix of tris and quads");
         std::cout << "Class: " << m.getLabel() << "\n";
-        std::cout << "Number of faces: " << m.primsSize() << "\n";
-        std::cout << "Number of vertices: " << m.vertsSize() << "\n";
+        std::cout << "Number of faces: " << faces[i] << "\n";
+        std::cout << "Number of vertices: " << verts[i] << "\n";
         std::cout << "Type of faces: " << type << "\n";
         std::cout << "AABB: \n";
         std::cout << "  min: " << m.minPoint.e[0] << " " << m.minPoint.e[1] << " " << m.minPoint.e[2] << "\n";
@@ -563,17 +540,28 @@ void analyseDatabase(std::vector<Mesh> meshes)
 
 // Resample functions
 
-std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes)
+std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes, int minVert = minVertCount, int maxVert = maxVertCount)
 {
-    std::vector<Mesh> result;
+    int total = static_cast<int>(meshes.size());
+    std::cout << "Resampling " << total << " meshes in parallel...\n";
 
-    for (Mesh m : meshes)
+    std::atomic<int> completed{0};
+
+    #pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < total; ++i)
     {
-        resampleMesh(m);
-        result.push_back(m);
+        resampleMesh(meshes[i], minVert, maxVert);
+
+        int done = ++completed;
+        if (done % 20 == 0 || done == total)
+        {
+            #pragma omp critical
+            std::cout << "[Resampling] Completed " << done << " / " << total << " meshes (" << (done * 100 / total) << "%)\n";
+        }
     }
 
-    return result;
+    std::cout << "Finished resampling meshes.\n";
+    return meshes;
 }
 
 // Normalisation functions
@@ -668,16 +656,17 @@ void normalizeMesh(Mesh& input)
 
 std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
 {
-    std::vector<Mesh> result;
+    int total = static_cast<int>(meshes.size());
+    std::cout << "Normalizing " << total << " meshes in parallel...\n";
 
-    resampleMeshes(meshes);
-    for (Mesh m : meshes)
+    #pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < total; ++i)
     {
-        normalizeMesh(m);
-        result.push_back(m);
+        normalizeMesh(meshes[i]);
     }
 
-    return result;
+    std::cout << "Finished normalizing meshes.\n";
+    return meshes;
 }
 
 // Main functions
@@ -715,14 +704,8 @@ int main()
         std::vector<Mesh> resampled_meshes = resampleMeshes(original_meshes);
         analyseDatabase(resampled_meshes);
 
-        // Resample outliers
-        //std::vector<Mesh> resampled_meshes = resampleMeshes(original_meshes);
-
-        // Analyse updated meshes
-        //analyseDatabase(resampled_meshes);
-
         // Normalization --> remeshing, translation, (rotation), (flipping), scaling
-        std::vector<Mesh> normalized_meshes = normalizeMeshes(original_meshes);
+        std::vector<Mesh> normalized_meshes = normalizeMeshes(resampled_meshes);
 
         // Check if normalization tool works correctly
         analyseDatabase(normalized_meshes);
