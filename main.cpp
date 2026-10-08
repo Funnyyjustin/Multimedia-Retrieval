@@ -526,8 +526,8 @@ void analyseDatabase(std::vector<Mesh> meshes)
         else types.push_back(2);
 
         //calculate barycenters
-        Point3 cumulative_point;
-        for (Point3 point: m.vertices)
+        Point3 cumulative_point(0, 0, 0);
+        for (const auto& point : m.vertices)
         {
             cumulative_point += point;
         }
@@ -627,6 +627,24 @@ void scaleUniformly(Mesh& input)
         v *= factor;
     }
 
+    // Update old AABB into new one
+    x_min = x_max = static_cast<float>(input.vertices[0].x());
+    y_min = y_max = static_cast<float>(input.vertices[0].y());
+    z_min = z_max = static_cast<float>(input.vertices[0].z());
+
+    for (const auto& v : input.vertices)
+    {
+        x_min = std::min(x_min, static_cast<float>(v.x()));
+        x_max = std::max(x_max, static_cast<float>(v.x()));
+        y_min = std::min(y_min, static_cast<float>(v.y()));
+        y_max = std::max(y_max, static_cast<float>(v.y()));
+        z_min = std::min(z_min, static_cast<float>(v.z()));
+        z_max = std::max(z_max, static_cast<float>(v.z()));
+    }
+
+    input.minPoint = Point3(x_min, y_min, z_min);
+    input.maxPoint = Point3(x_max, y_max, z_max);
+
     input.updateGLBuffers();
 }
 
@@ -704,10 +722,10 @@ int main()
         //analyseDatabase(resampled_meshes);
 
         // Normalization --> remeshing, translation, (rotation), (flipping), scaling
-        //std::vector<Mesh> normalized_meshes = normalizeMeshes(resampled_meshes);
+        std::vector<Mesh> normalized_meshes = normalizeMeshes(original_meshes);
 
         // Check if normalization tool works correctly
-        //analyseDatabase(normalized_meshes);
+        analyseDatabase(normalized_meshes);
     }
 
     return 0;
