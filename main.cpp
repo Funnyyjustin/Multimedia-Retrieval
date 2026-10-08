@@ -157,7 +157,6 @@ void renderObject(fs::path selectedFile)
     int modelViewLoc = glGetUniformLocation(shaderProgram, "uModelView");
     int useLightingLoc = glGetUniformLocation(shaderProgram, "uUseLighting");
     GLint colorLoc = glGetUniformLocation(shaderProgram, "uColor");
-    std::cout << "colorLoc = " << colorLoc << std::endl;
 
     float lastFrameTime = 0.0f;
 
@@ -248,6 +247,11 @@ void renderObject(fs::path selectedFile)
             rKeyPressed = false;
         }
 
+        if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS)
+        {
+            break;
+        }
+
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -323,6 +327,14 @@ void renderObject(int id)
 {
     fs::path path = selectModelFile(id);
     renderObject(path);
+}
+
+void renderObjects(vector<int> ids)
+{
+    for (int id : ids)
+    {
+        renderObject(id);
+    }
 }
 
 std::vector<int> flatten(std::vector<std::vector<int>>& vec)
@@ -749,13 +761,19 @@ int main()
         std::vector<std::vector<float>> dataDeviations = getDataDeviations();
         std::cout << "Read csv and calculated standard deviations" << std::endl;
         // after sorting, low number of deviations away from average are low indeces and high number of deviations away are high indeces
-        quicksort(dataDeviations, 1, 0, dataDeviations.size() - 1);
-        for (int i = 0; i < 5; i++)
+        int index = 2; // 1 = faces, 2 = vertices
+
+        quicksort(dataDeviations, index, 0, dataDeviations.size() - 1);
+
+        vector<int> outliers;
+        outliers.push_back(dataDeviations[0][0]);
+        for (int i = 0; dataDeviations[dataDeviations.size() - 1 - i][index] >= 3; i++)
         {
-            auto elem = dataDeviations[dataDeviations.size() - 1 - i];
-            cout << elem[0] << " " << elem[1] << " " << elem[2] << endl;
+            int elem = dataDeviations.size() - 1 - i;
+            outliers.push_back(dataDeviations[elem][0]);
         }
-        renderObject(dataDeviations[dataDeviations.size() - 1][0]);
+
+        renderObjects(outliers);
     }
 
     return 0;
