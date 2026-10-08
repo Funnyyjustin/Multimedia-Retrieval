@@ -564,27 +564,9 @@ std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes, int minVert = minVert
     return meshes;
 }
 
-// Normalisation functions
+// Normalisation functions + helper
 
-void translateBarycenter(Mesh& input)
-{
-    if (input.vertices.empty()) return;
-
-    Point3 barycenter(0, 0, 0);
-    for (const auto& v : input.vertices) {
-        barycenter += v;
-    }
-    barycenter /= static_cast<double>(input.vertices.size());
-
-    // translate the unique vertices
-    for (auto& v : input.vertices) {
-        v -= barycenter;
-    }
-
-    input.updateGLBuffers();
-}
-
-void scaleUniformly(Mesh& input)
+void calculateAABB(Mesh& input)
 {
     if (input.vertices.empty()) return;
 
@@ -605,8 +587,37 @@ void scaleUniformly(Mesh& input)
 
     input.minPoint = Point3(x_min, y_min, z_min);
     input.maxPoint = Point3(x_max, y_max, z_max);
+}
 
-    float largest_dim = std::max({x_max - x_min, y_max - y_min, z_max - z_min});
+void translateBarycenter(Mesh& input)
+{
+    if (input.vertices.empty()) return;
+
+    Point3 barycenter(0, 0, 0);
+    for (const auto& v : input.vertices) {
+        barycenter += v;
+    }
+    barycenter /= static_cast<double>(input.vertices.size());
+
+    // translate the unique vertices
+    for (auto& v : input.vertices) {
+        v -= barycenter;
+    }
+
+    // Update old AABB into new one
+    calculateAABB(input);
+
+    input.updateGLBuffers();
+}
+
+void scaleUniformly(Mesh& input)
+{
+    if (input.vertices.empty()) return;
+
+    Point3 minpoint = input.minPoint;
+    Point3 maxpoint = input.maxPoint;
+
+    float largest_dim = std::max({maxpoint.e[0] - minpoint.e[0], maxpoint.e[1] - minpoint.e[1], maxpoint.e[2] - minpoint.e[2]});
     if (largest_dim == 0.0f) return;
 
     double factor = 1.0 / largest_dim;
@@ -616,22 +627,7 @@ void scaleUniformly(Mesh& input)
     }
 
     // Update old AABB into new one
-    x_min = x_max = static_cast<float>(input.vertices[0].x());
-    y_min = y_max = static_cast<float>(input.vertices[0].y());
-    z_min = z_max = static_cast<float>(input.vertices[0].z());
-
-    for (const auto& v : input.vertices)
-    {
-        x_min = std::min(x_min, static_cast<float>(v.x()));
-        x_max = std::max(x_max, static_cast<float>(v.x()));
-        y_min = std::min(y_min, static_cast<float>(v.y()));
-        y_max = std::max(y_max, static_cast<float>(v.y()));
-        z_min = std::min(z_min, static_cast<float>(v.z()));
-        z_max = std::max(z_max, static_cast<float>(v.z()));
-    }
-
-    input.minPoint = Point3(x_min, y_min, z_min);
-    input.maxPoint = Point3(x_max, y_max, z_max);
+    calculateAABB(input);
 
     input.updateGLBuffers();
 }
@@ -639,11 +635,41 @@ void scaleUniformly(Mesh& input)
 void alignAxes(Mesh& input)
 {
     // TODO: to be done with step 3.1
+
+    // Step 1: Compute Covariance Matrix (3x3)
+    // Can be calculated by first putting all vertices in a Nx3 matrix V (so each row of the matrix is a xyz of a vertex in the shape)
+    // Then we can get C = (1 / N) * (V^t * V), where N is the number of vertices
+
+    // Step 2: Perform Eigen decomposition
+    // We have to solve det(C - l * I) = 0, where I is the identity matrix and l is lambda --> solve for lambda
+    // Since C is a 3x3 matrix, we get -l^3 + c2 * lambda^2 + c1 * lambda + c0 = 0 to get the eigenvalues (l1, l2, l3)
+    // To get the eigenvectors, we plug the eigenvalues back into the original equations: (C - li * I) * vi = 0,
+    // where li is the ith eigenvalue, and vi is the corresponding eigenvector.
+    // We can use Gaussian elimination for this. After applying that, we have to normalize the result.
+    // Largest eigenvalue means that its corresponding eigenvector represents the longest dimension of the shape --> same principal for the other values/vectors
+
+    // Step 3: Put the three eigenvectors together in a 3x3 rotation matrix R
+    // The left column should correspond to the eigenvector with the largest eigenvalue --> same idea for the other two, left to right, large to small
+    // We can then rotate all the points in our shape by applying R^t * V (the V from step 1), which gives us a matrix of all vertices of the shape, properly rotated
+
+    // Update old AABB into new one
+    calculateAABB(input);
 }
 
 void flipShape(Mesh& input)
 {
     // TODO: to be done with step 3.1
+
+    // The idea is to have the sides of the shapes that have more mass always be on the same side of some axis
+    // We can do this by first calculating the centers of all triangles
+    // Then, for x, y and z, we calculate fi = sum_t sign(C t,i)(C t,i)^2
+    // where i = {x, y, z}, and (C t, i) is the ith coordinate of center of triangle t
+    // Basically, all we do, is for each axis, calculate how much its weights towards either the positive or negative side
+    // We can then make a 3x3 matrix F, where the diagonals are sign(fx), sign(fy) and sign(fz)
+    // We multiply each set of vertex coordinates with F to apply the flipping
+
+    // Update old AABB into new one
+    calculateAABB(input);
 }
 
 void normalizeMesh(Mesh& input)
