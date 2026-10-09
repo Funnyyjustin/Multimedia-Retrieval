@@ -7,8 +7,6 @@
 #include <unordered_set>
 #include "vec3.h"
 
-const int minVertCount = 5000;
-const int maxVertCount = 10000;
 const float subdivideFraction = 0.5f;
 
 struct FastEdge
@@ -43,31 +41,32 @@ inline float calculateAlpha(int n)
     return 0.1875f; // 3/16
 }
 
-void resampleMesh(Mesh& input)
+void resampleMesh(Mesh& input, int minVert, int maxVert)
 {
-    // Check if the mesh needs to be resampled according to bounds (5k - 10k vertices)
-    if (input.vertsSize() < minVertCount)
-    {
-        while (input.vertsSize() < minVertCount)
-        {
-            int previousCount = input.vertsSize();
-            // upsampleMeshSimple(input);
-            upsampleMeshLoop(input);
+    if (minVert > maxVert) std::swap(minVert, maxVert);
 
-            if (input.vertsSize() <= previousCount)
-                break;
-        }
+    // 1. If mesh has fewer vertices than minVert, upsample until it reaches at least minVert
+    while (static_cast<int>(input.vertices.size()) < minVert)
+    {
+        int previousCount = input.vertsSize();
+        // upsampleMeshSimple(input);
+        upsampleMeshLoop(input);
+
+        // Break if upsampling did not increase vertex count to prevent an infinite loop
+        if (input.vertsSize() <= previousCount)
+            break;
     } 
-    else if (input.vertsSize() > maxVertCount)
-    {
-        while (input.vertsSize() > maxVertCount)
-        {
-            int previousCount = input.vertsSize();
-            downsampleMesh(input);
 
-            if (input.vertsSize() >= previousCount)
-                break;
-        }
+    // 2. If mesh has more vertices than maxVert (either originally or after upsampling overshot),
+    // downsample until it is within [minVert, maxVert].
+    while (static_cast<int>(input.vertices.size()) > maxVert)
+    {
+        int previousCount = input.vertsSize();
+        downsampleMesh(input, minVert);
+
+        // Break if decimation cannot remove any more vertices to prevent an infinite loop
+        if (input.vertsSize() >= previousCount)
+            break;
     }
 }   
 
@@ -154,6 +153,7 @@ void upsampleMeshLoop(Mesh& input)
     // Update neighbours and edge points
     std::vector<Point3> neighborSum(oldVerts.size(), Point3(0, 0, 0));
     std::vector<int> valence(oldVerts.size(), 0);
+    std::vector<std::vector<int>> boundaryNeighbors(oldVerts.size());
     std::vector<Point3> newPositions;
     newPositions.reserve(oldVerts.size() + edgeMap.size());
     newPositions = oldVerts;
@@ -163,6 +163,12 @@ void upsampleMeshLoop(Mesh& input)
         FastEdge& edge = pair.second;
         int u = edge.u;
         int v = edge.v;
+        
+        if (edge.w2 == -1) {
+            boundaryNeighbors[u].push_back(v);
+            boundaryNeighbors[v].push_back(u);
+        }
+        
         const Point3& Pu = oldVerts[u];
         const Point3& Pv = oldVerts[v];
 
@@ -184,10 +190,18 @@ void upsampleMeshLoop(Mesh& input)
 
     // 3. Vertex smoothing
     for (size_t i = 0; i < oldVerts.size(); ++i) {
-        int n = valence[i];
-        if (n > 0) {
-            float alpha = calculateAlpha(n);
-            newPositions[i] = oldVerts[i] * (1.0 - n * alpha) + neighborSum[i] * alpha;
+        if (boundaryNeighbors[i].size() == 2) {
+            int b1 = boundaryNeighbors[i][0];
+            int b2 = boundaryNeighbors[i][1];
+            newPositions[i] = oldVerts[i] * 0.75f + (oldVerts[b1] + oldVerts[b2]) * 0.125f;
+        } else if (!boundaryNeighbors[i].empty()) {
+            newPositions[i] = oldVerts[i];
+        } else {
+            int n = valence[i];
+            if (n > 0) {
+                float alpha = calculateAlpha(n);
+                newPositions[i] = oldVerts[i] * (1.0f - n * alpha) + neighborSum[i] * alpha;
+            }
         }
     }
 
@@ -213,9 +227,12 @@ void upsampleMeshLoop(Mesh& input)
     input.updateGLBuffers();
 }
 
-void downsampleMesh(Mesh& input)
+void downsampleMesh(Mesh& input, int targetVertices)
 {
     if (input.vertices.empty() || input.faces.empty()) return;
+
+    int currentVertices = static_cast<int>(input.vertices.size());
+    if (targetVertices > 0 && currentVertices <= targetVertices) return;
 
     // 1. Build vertex-to-face adjacency list
     std::vector<std::vector<int>> vertexFaces(input.vertices.size());
@@ -259,12 +276,19 @@ void downsampleMesh(Mesh& input)
     std::vector<bool> vertexRemoved(input.vertices.size(), false);
     std::vector<bool> faceRemoved(input.faces.size(), false);
 
-    int currentVertices = static_cast<int>(input.vertices.size());
-    // Reduce vertices by 20% per step, respecting minVertCount bound
-    int targetVertices = std::max(minVertCount, static_cast<int>(currentVertices * 0.8f));
+    // Reduce vertices by up to 20% per step, respecting targetVertices lower bound
+    int stepTarget;
+    if (targetVertices > 0)
+    {
+        stepTarget = std::max(targetVertices, static_cast<int>(currentVertices * 0.8f));
+    }
+    else
+    {
+        stepTarget = std::max(1, static_cast<int>(currentVertices * 0.8f));
+    }
 
     // 5. Edge collapse decimation loop
-    while (currentVertices > targetVertices && !pq.empty())
+    while (currentVertices > stepTarget && !pq.empty())
     {
         DecimateEdge edge = pq.top();
         pq.pop();
@@ -283,7 +307,6 @@ void downsampleMesh(Mesh& input)
         for (int fIdx : vertexFaces[u])
         {
             if (faceRemoved[fIdx]) continue;
-
             auto& face = input.faces[fIdx];
 
             // If face contains both u and v, it degenerates into a line segment
