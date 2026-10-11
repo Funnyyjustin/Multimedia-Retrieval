@@ -707,6 +707,13 @@ void alignAxes(Mesh& input)
     }
 }
 
+int sign(float i)
+{
+    if (i < 0)
+        return -1;
+    return 1;
+}
+
 void flipShape(Mesh& input)
 {
     // TODO: to be done with step 3.1
@@ -719,9 +726,39 @@ void flipShape(Mesh& input)
     // We can then make a 3x3 matrix F, where the diagonals are sign(fx), sign(fy) and sign(fz)
     // We multiply each set of vertex coordinates with F to apply the flipping
 
+    float fx = 0;
+    float fy = 0;
+    float fz = 0;
+
+    for (auto face : input.faces)
+    {
+        float centersum[3]{ 0, 0, 0 };
+        for (int a : face.v)
+        {
+            centersum[0] += input.vertices[a].x();
+            centersum[1] += input.vertices[a].y();
+            centersum[2] += input.vertices[a].z();
+        }
+
+        for (int i = 0; i < 3; i++) centersum[i] /= face.v.size();
+
+        // Then, for x, y and z, we calculate fi = sum_t sign(C t,i)(C t,i)^2
+        fx += sign(centersum[0]) * pow(centersum[0], 2);
+        fy += sign(centersum[1]) * pow(centersum[1], 2);
+        fz += sign(centersum[2]) * pow(centersum[2], 2);
+    }
+
+    for (Point3& v : input.vertices)
+    {
+        v = Point3(sign(fx) * v.x(), sign(fy) * v.y(), sign(fz) * v.z());
+    }
+
     // Update old AABB into new one
     calculateAABB(input);
+    input.updateGLBuffers();
 }
+
+
 
 void normalizeMesh(Mesh& input)
 {
