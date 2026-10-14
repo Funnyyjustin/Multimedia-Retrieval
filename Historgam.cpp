@@ -172,7 +172,7 @@ bool exportHistogram(
     // pbPlots configuration
     BarPlotSeries* series = GetDefaultBarPlotSeriesSettings();
     series->ys = &bins;
-    series->color = CreateRGBColor(0.2, 0.5, 0.85); // Professional blue
+    series->color = CreateRGBColor(0.2, 0.5, 0.85);
     
     BarPlotSettings* settings = GetDefaultBarPlotSettings();
     settings->width = width;
@@ -187,14 +187,14 @@ bool exportHistogram(
     settings->autoBoundaries = true;
     settings->showGrid = true;
     
-    // Configure X-axis labels: begin, einde en een aantal tussenliggende waarden
+    // Configure X-axis labels
     settings->autoLabels = false;
     settings->xLabels = new std::vector<StringReference*>();
 
     double dataRange = maxVal - minVal;
     std::vector<std::string> labelTexts(numBins, "");
 
-    // Kies ~5 ticks: 0% (begin), 25%, 50%, 75%, 100% (einde)
+    // chose ~5 ticks: 0% (begin), 25%, 50%, 75%, 100% (end)
     size_t numTicks = (numBins < 5) ? numBins : 5;
 
     if (numTicks == 1) {
