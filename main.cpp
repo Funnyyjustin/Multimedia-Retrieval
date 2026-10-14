@@ -12,6 +12,7 @@
 #include "camera.h"
 #include "fileSelector.h"
 #include "resampling.h"
+#include "Historgam.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/pca.hpp>
@@ -791,6 +792,7 @@ int main()
     std::cout << "Select mode to begin: \n";
     std::cout << "1. Rendering mode\n";
     std::cout << "2. Analyse mode\n";
+    std::cout << "3. Histogram export mode\n";
     
     std::cin >> application_mode;
 
@@ -822,6 +824,12 @@ int main()
 
         // Check if normalization tool works correctly
         analyseDatabase(normalized_meshes);
+    }
+    
+    //Histogram mode
+    else if (application_mode == 3)
+    {
+        runHistogramMode();
     }
 
     return 0;
