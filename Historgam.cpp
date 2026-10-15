@@ -12,31 +12,32 @@
 #include <iomanip>
 #include <cmath>
 
-static std::string formatValue(double val, double range) {
+static std::string formatBound(double val, double binWidth) {
     double absVal = std::abs(val);
-
     if (absVal < 1e-9) {
         return "0";
     }
     
     // Very large or very small numbers: scientific notation
-    if (absVal >= 100000.0 || absVal < 0.001) {
+    if (absVal >= 100000.0 || (absVal < 0.001 && absVal > 0.0)) {
         std::ostringstream ss;
         ss << std::scientific << std::setprecision(1) << val;
         return ss.str();
     }
     
-    // If the data range is large (>= 10) or numbers are large, display as clean integers
-    if (range >= 10.0 || absVal >= 100.0) {
+    // If bin width is at least 1, display as clean integers
+    if (binWidth >= 1.0) {
         return std::to_string(static_cast<long long>(std::round(val)));
     }
     
-    // Floating point values with dynamic precision
+    // Floating point values with dynamic precision based on binWidth
     std::ostringstream ss;
-    if (range >= 1.0) {
+    if (binWidth >= 0.1) {
         ss << std::fixed << std::setprecision(1) << val;
-    } else {
+    } else if (binWidth >= 0.01) {
         ss << std::fixed << std::setprecision(2) << val;
+    } else {
+        ss << std::fixed << std::setprecision(3) << val;
     }
     
     std::string str = ss.str();
@@ -120,13 +121,13 @@ bool exportHistogram(
     std::vector<double> processedData = data;
 
     // Get min and max of data
-    double minVal = *std::min_element(processedData.begin(), processedData.end());
+    double minVal = Min(0, *std::min_element(processedData.begin(), processedData.end()));
     double maxVal = *std::max_element(processedData.begin(), processedData.end());
     
     // All data identical
-    if (minVal == maxVal)
+    if (maxVal - minVal < 0.001)
     {
-        maxVal += 1.0;
+        maxVal += 0.001;
     }
     
     // Normalize data values to [0, 1] if requested
@@ -168,6 +169,26 @@ bool exportHistogram(
             count /= totalCount;
         }
     }
+
+    // Prepare range labels for each bin: format "low - high"
+    std::vector<std::string> labelTexts(numBins);
+    std::vector<std::wstring> wLabelTexts(numBins);
+    double maxLabelPixelWidth = 0.0;
+
+    for (size_t i = 0; i < numBins; ++i) {
+        double low = minVal + static_cast<double>(i) * binWidth;
+        double high = minVal + static_cast<double>(i + 1) * binWidth;
+        std::string label = formatBound(low, binWidth) + " - " + formatBound(high, binWidth);
+        labelTexts[i] = label;
+        wLabelTexts[i] = std::wstring(label.begin(), label.end());
+
+        std::vector<wchar_t>* tempWVec = toVector(wLabelTexts[i].c_str());
+        double textWidth = GetTextWidth(tempWVec);
+        if (textWidth > maxLabelPixelWidth) {
+            maxLabelPixelWidth = textWidth;
+        }
+        delete tempWVec;
+    }
     
     // pbPlots configuration
     BarPlotSeries* series = GetDefaultBarPlotSeriesSettings();
@@ -187,41 +208,23 @@ bool exportHistogram(
     settings->autoBoundaries = true;
     settings->showGrid = true;
     
-    // Configure X-axis labels
+    // Configure empty xLabels so pbPlots generates the plot without horizontal labels
     settings->autoLabels = false;
     settings->xLabels = new std::vector<StringReference*>();
-
-    double dataRange = maxVal - minVal;
-    std::vector<std::string> labelTexts(numBins, "");
-
-    // chose ~5 ticks: 0% (begin), 25%, 50%, 75%, 100% (end)
-    size_t numTicks = (numBins < 5) ? numBins : 5;
-
-    if (numTicks == 1) {
-        labelTexts[0] = formatValue(minVal, dataRange);
-    } else {
-        for (size_t t = 0; t < numTicks; ++t) {
-            double fraction = static_cast<double>(t) / static_cast<double>(numTicks - 1);
-            size_t binIdx = static_cast<size_t>(std::round(fraction * (numBins - 1)));
-            if (binIdx >= numBins) {
-                binIdx = numBins - 1;
-            }
-
-            double val = minVal + fraction * dataRange;
-            labelTexts[binIdx] = formatValue(val, dataRange);
-        }
-    }
-
     for (size_t i = 0; i < numBins; ++i) {
-        std::wstring wLabel(labelTexts[i].begin(), labelTexts[i].end());
-        settings->xLabels->push_back(CreateStringReference(toVector(wLabel.c_str())));
+        settings->xLabels->push_back(CreateStringReference(toVector(L"")));
     }
 
-    // Fix spacing: pbPlots default autoSpacing sets groupSeparation = width * 0.05,
-    // which results in negative barWidth when numBins > 15!
-    // Manually calculating groupSeparation ensures bars are always visible.
+    // Dynamically calculate paddings so vertical labels fit comfortably below the plot
+    settings->autoPadding = false;
+    double xPadding = std::floor(width * 0.10);
+    double yPadding = std::max(height * 0.10, maxLabelPixelWidth + 25.0);
+    settings->xPadding = xPadding;
+    settings->yPadding = yPadding;
+
+    // Fix spacing: manual group separation ensures bars are properly sized
     settings->autoSpacing = false;
-    double availableWidth = width * 0.8; // 10% padding on each side
+    double availableWidth = width - 2.0 * xPadding;
     double groupSep = 2.0;
     if (numBins > 1) {
         double maxSep = (availableWidth * 0.25) / static_cast<double>(numBins - 1);
@@ -241,6 +244,20 @@ bool exportHistogram(
     bool success = DrawBarPlotFromSettings(imageRef, settings, errorMessage);
 
     if (success) {
+        // Draw vertical bin range labels directly onto canvas
+        double barWidth = (availableWidth - groupSep * static_cast<double>(numBins - 1)) / static_cast<double>(numBins);
+        double yPixelMax = height - yPadding;
+        double labelY = yPixelMax + 8.0;
+
+        for (size_t i = 0; i < numBins; ++i) {
+            double barCenterX = xPadding + static_cast<double>(i) * (groupSep + barWidth) + 0.5 * barWidth;
+            double labelX = std::floor(barCenterX - 13.0 / 2.0); // Font glyph height is 13px
+
+            std::vector<wchar_t>* wtext = toVector(wLabelTexts[i].c_str());
+            DrawTextUpwards(imageRef->image, labelX, labelY, wtext, GetGray(0.3));
+            delete wtext;
+        }
+
         std::vector<double>* pngData = ConvertToPNG(imageRef->image);
         WriteToFile(pngData, filename);
         delete pngData;
@@ -258,6 +275,10 @@ bool exportHistogram(
     delete imageRef;
     delete errorMessage;
     delete settings->barPlotSeries;
+    for (StringReference* ref : *settings->xLabels) {
+        delete ref->string;
+        delete ref;
+    }
     delete settings->xLabels;
     delete settings;
     delete series;

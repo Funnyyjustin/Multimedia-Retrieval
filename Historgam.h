@@ -21,7 +21,7 @@ bool exportHistogram(
     bool normalizeCount = true,
     bool normalizeDataValues = false,
     double width = 800,
-    double height = 600
+    double height = 700
 );
 
 // Interactive console mode for generating histograms from CSV
