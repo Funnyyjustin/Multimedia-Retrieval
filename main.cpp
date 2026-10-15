@@ -668,9 +668,9 @@ double calculateVolume(Mesh& input)
 
     for (const auto& f : input.faces)
     {
-        const Point3& a = input.vertices[f.v[0]];
-        const Point3& b = input.vertices[f.v[1]];
-        const Point3& c = input.vertices[f.v[2]];
+        const Vec3& a = input.vertices[f.v[0]] - input.barycenter;
+        const Vec3& b = input.vertices[f.v[1]] - input.barycenter;
+        const Vec3& c = input.vertices[f.v[2]] - input.barycenter;
 
         volume += dot(a, cross(b, c)) / 6.0;
     }
