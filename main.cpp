@@ -792,6 +792,14 @@ void alignAxes(Mesh& input)
         glm::dvec3 pRot = glm::transpose(R) * p; // oftewel dot-product met e1, e2, e3
         v = Point3(pRot.x, pRot.y, pRot.z);
     }
+
+    for (auto& f : input.faces)
+    {
+        auto& c = f.centroid;
+        glm::dvec3 p(c.x(), c.y(), c.z());
+        glm::dvec3 pRot = glm::transpose(R) * p;
+        c = Point3(pRot.x, pRot.y, pRot.z);
+    }
     
     // Update old AABB into new one
     calculateAABB(input);
@@ -847,12 +855,16 @@ void flipShape(Mesh& input)
         v = Point3(sign(fx) * v.x(), sign(fy) * v.y(), sign(fz) * v.z());
     }
 
+    for (auto& f : input.faces)
+    {
+        auto& c = f.centroid;
+        c = Point3(sign(fx) * c.x(), sign(fy) * c.y(), sign(fz) * c.z());
+    }
+
     // Update old AABB into new one
     calculateAABB(input);
     input.updateGLBuffers();
 }
-
-
 
 void normalizeMesh(Mesh& input)
 {
