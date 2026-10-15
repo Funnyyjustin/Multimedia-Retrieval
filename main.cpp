@@ -348,14 +348,14 @@ std::vector<Mesh> flatten(std::vector<std::vector<Mesh>>& vec)
     return result;
 }
 
-void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, const std::vector<int>& types, const std::vector<Point3>& barycentres, const std::vector<Vec3>& scales, const std::string& filename)
+void exportToCSV(const std::vector<Mesh>& meshes, const std::vector<int>& faces, const std::vector<int>& verts, const std::vector<int>& types, const std::vector<Point3>& barycentres, const std::vector<Vec3>& scales, const std::string& filename)
 {
     std::ofstream file(filename + ".csv");
 
     if (!file.is_open())
         return;
 
-    file << "Shape id; Number of faces; Number of vertices; Face type; Barycentre X; Barycentre Y; Barycenter Z; Scale X; Scale Y; Scale Z\n";
+    file << "Shape id; Number of faces; Number of vertices; Face type; Volume; Area; Barycentre X; Barycentre Y; Barycenter Z; Scale X; Scale Y; Scale Z; EV1 x; EV1 y; EV1 z; EV2 x; EV2 y; EV2 z; EV3 x; EV3 y; EV3 z\n";
 
     size_t maxSize = std::max({ faces.size(), verts.size(), types.size() });
 
@@ -375,6 +375,14 @@ void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, c
 
         if (i < types.size())
             file << types[i];
+
+        file << ";";
+
+        file << meshes[i].volume;
+
+        file << ";";
+
+        file << meshes[i].area;
 
         file << ";";
 
@@ -405,6 +413,29 @@ void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, c
             file << ";";
             file << ";";
         }
+
+        file << ";";
+
+        file << meshes[i].ev1.e[0];
+        file << ";";
+        file << meshes[i].ev1.e[1];
+        file << ";";
+        file << meshes[i].ev1.e[2];
+        file << ";";
+
+        file << meshes[i].ev2.e[0];
+        file << ";";
+        file << meshes[i].ev2.e[1];
+        file << ";";
+        file << meshes[i].ev2.e[2];
+        file << ";";
+
+        file << meshes[i].ev3.e[0];
+        file << ";";
+        file << meshes[i].ev3.e[1];
+        file << ";";
+        file << meshes[i].ev3.e[2];
+        file << ";";
 
         file << "\n";
     }
@@ -540,7 +571,7 @@ void analyseDatabase(const std::vector<Mesh>& meshes)
         std::cout << "Enter CSV file name:\n";
         std::string filename;
         std::cin >> filename;
-        exportToCSV(faces, verts, types, barycentres, scales, filename);
+        exportToCSV(meshes, faces, verts, types, barycentres, scales, filename);
     }
     else if (c != 'y' && c != 'n')
         std::cout << "Invalid input. Try again.\n";
@@ -605,7 +636,7 @@ double calculateArea(const Face& face, const Mesh& mesh)
     return r;
 }
 
-Point3 calculateBarycenter(const Mesh& input)
+Point3 calculateBarycenter(Mesh& input)
 {
     Point3 barycenter(0, 0, 0);
     double total_area = 0;
@@ -622,12 +653,29 @@ Point3 calculateBarycenter(const Mesh& input)
 
     // Finally, divide the added centroids by total area
     barycenter /= total_area;
+    input.area = total_area;
 
-    barycenter.e[0] = std::round(barycenter.e[0]);
-    barycenter.e[1] = std::round(barycenter.e[1]);
-    barycenter.e[2] = std::round(barycenter.e[2]);
+    //barycenter.e[0] = std::round(barycenter.e[0]);
+    //barycenter.e[1] = std::round(barycenter.e[1]);
+    //barycenter.e[2] = std::round(barycenter.e[2]);
 
     return barycenter;
+}
+
+double calculateVolume(Mesh& input)
+{
+    double volume = 0.0;
+
+    for (const auto& f : input.faces)
+    {
+        const Point3& a = input.vertices[f.v[0]];
+        const Point3& b = input.vertices[f.v[1]];
+        const Point3& c = input.vertices[f.v[2]];
+
+        volume += dot(a, cross(b, c)) / 6.0;
+    }
+
+    return std::abs(volume);
 }
 
 void precomputeMesh(Mesh& input)
@@ -641,8 +689,9 @@ void precomputeMesh(Mesh& input)
         f.centroid = calculateCentroid(f, input);
     }
 
-    // Calculate barycenter of each mesh
+    // Calculate barycenter and volume of each mesh
     input.barycenter = calculateBarycenter(input);
+    input.volume = calculateVolume(input);
 }
 
 void precomputeMeshes(std::vector<Mesh>& meshes)
@@ -708,7 +757,10 @@ void translateBarycenter(Mesh& input)
     // Update old AABB into new one
     calculateAABB(input);
 
-    input.updateGLBuffers();
+    if (application_mode == 1)
+    {
+        input.updateGLBuffers();
+    }
 }
 
 void scaleUniformly(Mesh& input)
@@ -735,10 +787,16 @@ void scaleUniformly(Mesh& input)
         f.area *= factor * factor; // square because both edge vectors needed to calculate the area are scaled by the factor
     }
 
+    input.area *= factor * factor;
+    input.volume *= factor * factor * factor;
+
     // Update old AABB into new one
     calculateAABB(input);
 
-    input.updateGLBuffers();
+    if (application_mode == 1)
+    {
+        input.updateGLBuffers();
+    }
 }
 
 void alignAxes(Mesh& input)
@@ -808,6 +866,11 @@ void alignAxes(Mesh& input)
         glm::dvec3 pRot = glm::transpose(R) * p;
         c = Point3(pRot.x, pRot.y, pRot.z);
     }
+
+    // Save eigenvectors
+    input.ev1 = Vec3(e1.x, e1.y, e1.z);
+    input.ev2 = Vec3(e2.x, e2.y, e2.z);
+    input.ev3 = Vec3(e3.x, e3.y, e3.z);
     
     // Update old AABB into new one
     calculateAABB(input);
@@ -877,8 +940,8 @@ void flipShape(Mesh& input)
 void normalizeMesh(Mesh& input)
 {
     translateBarycenter(input);
-    //alignAxes(input);
-    //flipShape(input);
+    alignAxes(input);
+    flipShape(input);
     scaleUniformly(input);
 }
 

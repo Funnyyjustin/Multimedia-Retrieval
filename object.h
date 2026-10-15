@@ -29,6 +29,11 @@ public:
 	bool trisOnly;
 	bool quadsOnly;
 
+	double area;
+	double volume;
+
+	Vec3 ev1, ev2, ev3; // Eigenvectors
+
 	Mesh() = default;
 	
 	Mesh(const std::vector<Point3>& verts, const std::vector<Face>& fcs): vertices(verts), faces(fcs)
