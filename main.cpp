@@ -973,7 +973,7 @@ int main()
     std::cout << "Multimedia Retrieval tool\n";
     std::cout << "Select mode to begin: \n";
     std::cout << "1. Rendering mode\n";
-    std::cout << "2. Analyse mode\n";
+    std::cout << "2. Feature extraction mode\n";
     std::cout << "3. Histogram export mode\n";
     
     std::cin >> application_mode;
