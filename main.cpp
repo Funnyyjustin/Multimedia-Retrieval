@@ -574,7 +574,7 @@ std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes, int minVert = minVert
 
 // Precomputation functions
 
-Point3 calculateCentroid(Face face, Mesh mesh)
+Point3 calculateCentroid(const Face& face, const Mesh& mesh)
 {
     Point3 p(0, 0, 0);
     for (const auto& v : face.v)
@@ -585,7 +585,7 @@ Point3 calculateCentroid(Face face, Mesh mesh)
     return p;
 }
 
-double calculateArea(Face face, Mesh mesh)
+double calculateArea(const Face& face, const Mesh& mesh)
 {
     // Get the three vertices
     Point3 a = mesh.vertices[face.v[0]];
@@ -605,35 +605,38 @@ double calculateArea(Face face, Mesh mesh)
     return r;
 }
 
-Point3 calculateBarycenter(Mesh input)
+Point3 calculateBarycenter(const Mesh& input)
 {
     Point3 barycenter(0, 0, 0);
     double total_area = 0;
-    int i = 0;
 
-    for (const auto& f : input.faces)
+    #pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < static_cast<int>(input.faces.size()); i++)
     {
-        // Calculate centroid of the face
-        Point3 centroid = calculateCentroid(f, input);
+        auto& f = input.faces[i];
 
         // Then add the centroid to the calculation
-        barycenter += centroid * f.area;
+        barycenter += f.centroid * f.area;
         total_area += f.area;
-        i++;
-
-        if (i % 100 == 0) std::cout << i << "\n";
     }
 
     // Finally, divide the added centroids by total area
     barycenter /= total_area;
+
+    barycenter.e[0] = std::round(barycenter.e[0]);
+    barycenter.e[1] = std::round(barycenter.e[1]);
+    barycenter.e[2] = std::round(barycenter.e[2]);
+
     return barycenter;
 }
 
 void precomputeMesh(Mesh& input)
 {
     // For each face, precompute the centroid and the area
-    for (auto& f : input.faces)
+    #pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < static_cast<int>(input.faces.size()); i++)
     {
+        auto& f = input.faces[i];
         f.area = calculateArea(f, input);
         f.centroid = calculateCentroid(f, input);
     }
@@ -642,7 +645,7 @@ void precomputeMesh(Mesh& input)
     input.barycenter = calculateBarycenter(input);
 }
 
-std::vector<Mesh> precomputeMeshes(std::vector<Mesh> meshes)
+void precomputeMeshes(std::vector<Mesh>& meshes)
 {
     int total = static_cast<int>(meshes.size());
     std::cout << "Precomputing " << total << " meshes in parallel...\n";
@@ -654,7 +657,6 @@ std::vector<Mesh> precomputeMeshes(std::vector<Mesh> meshes)
     }
 
     std::cout << "Finished precomputing meshes.\n";
-    return meshes;
 }
 
 // Normalisation functions + helper
@@ -727,6 +729,12 @@ void scaleUniformly(Mesh& input)
         v *= factor;
     }
 
+    for (auto& f : input.faces)
+    {
+        f.centroid *= factor;
+        f.area *= factor * factor; // square because both edge vectors needed to calculate the area are scaled by the factor
+    }
+
     // Update old AABB into new one
     calculateAABB(input);
 
@@ -735,7 +743,7 @@ void scaleUniformly(Mesh& input)
 
 void alignAxes(Mesh& input)
 {
-    // TODO: to be done with step 3.1
+    std::cout << "Rotating..\n";
 
     // Step 1: Compute Covariance Matrix (3x3)
     // Can be calculated by first putting all vertices in a Nx3 matrix V (so each row of the matrix is a xyz of a vertex in the shape)
@@ -818,7 +826,7 @@ int sign(float i)
 
 void flipShape(Mesh& input)
 {
-    // TODO: to be done with step 3.1
+    std::cout << "Flipping..\n";
 
     // The idea is to have the sides of the shapes that have more mass always be on the same side of some axis
     // We can do this by first calculating the centers of all triangles
@@ -893,6 +901,8 @@ std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
 
 int main()
 {
+    omp_set_num_threads(omp_get_max_threads());
+
     std::cout << "Multimedia Retrieval tool\n";
     std::cout << "Select mode to begin: \n";
     std::cout << "1. Rendering mode\n";
@@ -928,7 +938,8 @@ int main()
         //analyseDatabase(resampled_meshes);
 
         // Precompute values of the meshes
-        std::vector<Mesh> precomputated_meshes = precomputeMeshes(resampled_meshes);
+        std::vector<Mesh> precomputated_meshes = resampled_meshes;
+        precomputeMeshes(precomputated_meshes);
         analyseDatabase(precomputated_meshes);
 
         // Normalization --> remeshing, translation, (rotation), (flipping), scaling
