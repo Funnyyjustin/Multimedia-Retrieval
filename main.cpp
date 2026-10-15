@@ -781,6 +781,7 @@ void scaleUniformly(Mesh& input)
         v *= factor;
     }
 
+    double total_area = 0;
     for (auto& f : input.faces)
     {
         f.centroid *= factor;
@@ -934,7 +935,10 @@ void flipShape(Mesh& input)
 
     // Update old AABB into new one
     calculateAABB(input);
-    input.updateGLBuffers();
+    if (application_mode == 1)
+    {
+        input.updateGLBuffers();
+    }
 }
 
 void normalizeMesh(Mesh& input)
