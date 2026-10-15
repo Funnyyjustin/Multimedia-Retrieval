@@ -7,6 +7,7 @@
 #include <limits>
 #include <omp.h>
 #include <atomic>
+#include <math.h>
 #include "parseobj.h"
 #include "object.h"
 #include "camera.h"
@@ -18,6 +19,7 @@
 #include <glm/gtx/pca.hpp>
 #include <glm/glm.hpp>
 
+# define M_PI           3.14159265358979323846  /* pi */
 
 namespace fs = std::filesystem;
 int application_mode;
@@ -964,6 +966,91 @@ std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
     return meshes;
 }
 
+// Feature extraction functions
+
+double calculateCompactness(Mesh& mesh)
+{
+    double area = mesh.area;
+    double volume = mesh.volume;
+
+    return ((area * area * area) / (36 * M_PI * volume * volume));
+}
+
+double calculateVolumeAABB(Mesh& mesh)
+{
+    auto min = mesh.minPoint;
+    auto max = mesh.maxPoint;
+
+    return ((max.e[0] - min.e[0]) * (max.e[1] - min.e[1]) * (max.e[2] - min.e[2]));
+}
+
+double calculateRectangularity(Mesh& mesh)
+{
+    double volume = mesh.volume;
+    double volumeAABB = calculateVolumeAABB(mesh);
+    return volume / volumeAABB;
+}
+
+double getDiameter(Mesh& mesh)
+{
+    double maxDistSquared = 0.0;
+    auto vertices = mesh.vertices;
+
+    for (size_t i = 0; i < vertices.size(); ++i)
+    {
+        for (size_t j = i + 1; j < vertices.size(); ++j)
+        {
+            double dx = vertices[i].e[0] - vertices[j].e[0];
+            double dy = vertices[i].e[1] - vertices[j].e[1];
+            double dz = vertices[i].e[2] - vertices[j].e[2];
+
+            double distSquared = dx * dx + dy * dy + dz * dz;
+
+            maxDistSquared = std::max(maxDistSquared, distSquared);
+        }
+    }
+
+    return std::sqrt(maxDistSquared);
+}
+
+double calculateEccentricity(Mesh& mesh)
+{
+    auto l1 = mesh.ev1.length();
+    auto l3 = mesh.ev3.length();
+    return l1 / l3;
+}
+
+std::vector<double> featureExtract(Mesh& mesh)
+{
+    
+    std::vector<double> vec;
+
+    // Fill vector with elementary feature descriptors
+    // Surface area; compactness; 3D rectangularity; diameter; convexity; eccentricity
+    vec.push_back(mesh.area);
+    vec.push_back(calculateCompactness(mesh));
+    vec.push_back(calculateRectangularity(mesh));
+    vec.push_back(getDiameter(mesh));
+    // TODO: convexity: volume divided by convex hull volume
+    vec.push_back(calculateEccentricity(mesh));
+
+    // TODO: shape property descriptors
+
+    return vec;
+}
+
+std::vector<std::vector<double>> featureExtraction(std::vector<Mesh> meshes)
+{
+    std::vector<std::vector<double>> vec;
+
+    for (auto& m : meshes)
+    {
+        vec.push_back(featureExtract(m));
+    }
+
+    return vec;
+}
+
 // Main functions
 
 int main()
@@ -1012,6 +1099,9 @@ int main()
         // Normalization --> remeshing, translation, (rotation), (flipping), scaling
         std::vector<Mesh> normalized_meshes = normalizeMeshes(precomputated_meshes);
         analyseDatabase(normalized_meshes);
+
+        // Feature extraction for all meshes
+        std::vector<std::vector<double>> elem_desc = featureExtraction(normalized_meshes);
     }
     
     //Histogram mode
