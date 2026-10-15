@@ -164,7 +164,6 @@ void renderObject(fs::path selectedFile)
     int modelViewLoc = glGetUniformLocation(shaderProgram, "uModelView");
     int useLightingLoc = glGetUniformLocation(shaderProgram, "uUseLighting");
     GLint colorLoc = glGetUniformLocation(shaderProgram, "uColor");
-    std::cout << "colorLoc = " << colorLoc << std::endl;
 
     float lastFrameTime = 0.0f;
 
@@ -348,14 +347,21 @@ std::vector<Mesh> flatten(std::vector<std::vector<Mesh>>& vec)
     return result;
 }
 
-void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, const std::vector<int>& types, const std::vector<Point3>& barycentres, const std::vector<Vec3>& scales, const std::string& filename)
+void exportToCSV(
+    const std::vector<int>&     faces, 
+    const std::vector<int>&     verts, 
+    const std::vector<int>&     types, 
+    const std::vector<Point3>&  barycentres, 
+    const std::vector<Vec3>&    scales, 
+    const std::vector<Vec3>&    alignments,
+    const std::string&          filename)
 {
     std::ofstream file(filename + ".csv");
 
     if (!file.is_open())
         return;
 
-    file << "Shape id; Number of faces; Number of vertices; Face type; Barycentre X; Barycentre Y; Barycenter Z; Scale X; Scale Y; Scale Z\n";
+    file << "Shape id; Number of faces; Number of vertices; Face type; Barycenter X; Barycentee Y; Barycenter Z; Scale X; Scale Y; Scale Z; Angle to X; Angle to Y; Angle to Z\n";
 
     size_t maxSize = std::max({ faces.size(), verts.size(), types.size() });
 
@@ -406,8 +412,64 @@ void exportToCSV(const std::vector<int>& faces, const std::vector<int>& verts, c
             file << ";";
         }
 
+        file << ";";
+
+        if (i < alignments.size())
+        {
+            file << alignments[i].x() << ";";
+            file << alignments[i].y() << ";";
+            file << alignments[i].z() << ";";
+        }
+        else
+        {
+            file << ";" << ";" << ";";
+        }
+
         file << "\n";
     }
+}
+
+Vec3 computeAxesAngles(const Mesh& mesh)
+{
+    std::vector<glm::dvec3> V;
+    V.reserve(mesh.vertices.size());
+    for (const auto& v : mesh.vertices)
+    {
+        V.emplace_back(v.x(), v.y(), v.z());
+    }
+
+    glm::dvec3 C(0.0, 0.0, 0.0);
+
+    // Step 2: Perform Eigen decomposition
+    // We have to solve det(C - l * I) = 0, where I is the identity matrix and l is lambda --> solve for lambda
+    // Since C is a 3x3 matrix, we get -l^3 + c2 * lambda^2 + c1 * lambda + c0 = 0 to get the eigenvalues (l1, l2, l3)
+    // To get the eigenvectors, we plug the eigenvalues back into the original equations: (C - li * I) * vi = 0,
+    // where li is the ith eigenvalue, and vi is the corresponding eigenvector.
+    // We can use Gaussian elimination for this. After applying that, we have to normalize the result.
+    // Largest eigenvalue means that its corresponding eigenvector represents the longest dimension of the shape --> same principal for the other values/vectors
+
+    glm::dmat3 covMat = glm::computeCovarianceMatrix(V.data(), V.size(), C);
+
+    glm::dvec3 evals;
+    glm::dmat3 evecs;
+    int count = glm::findEigenvaluesSymReal(covMat, evals, evecs);
+    if (count != 3) {
+        return Vec3();
+    }
+
+    // Sort from largest to smallest (evlas[0] >= evals[1] >= evals[2])
+    glm::sortEigenvalues(evals, evecs);
+
+    glm::dvec3 e1 = glm::normalize(evecs[0]);
+    glm::dvec3 e2 = glm::normalize(evecs[1]);
+    glm::dvec3 e3 = glm::normalize(evecs[2]);
+
+    double x = acos(glm::clamp(e1.x, -1.0, 1.0));
+    double y = acos(glm::clamp(e2.y, -1.0, 1.0));
+    double z = acos(glm::clamp(e3.z, -1.0, 1.0));
+
+
+    return Vec3(x, y, z);
 }
 
 // Database analyse functions
@@ -488,6 +550,7 @@ void analyseDatabase(const std::vector<Mesh>& meshes)
     std::vector<int> types(n);
     std::vector<Point3> barycentres(n);
     std::vector<Vec3> scales(n);
+    std::vector<Vec3> alignments(n);
 
     // Compute metrics in parallel
     #pragma omp parallel for schedule(static)
@@ -514,6 +577,7 @@ void analyseDatabase(const std::vector<Mesh>& meshes)
         barycentres[i] = m.barycenter;
 
         scales[i] = { m.maxPoint - m.minPoint };
+        alignments[i] = computeAxesAngles(m);
     }
 
     // Print summary to console cleanly
@@ -540,7 +604,7 @@ void analyseDatabase(const std::vector<Mesh>& meshes)
         std::cout << "Enter CSV file name:\n";
         std::string filename;
         std::cin >> filename;
-        exportToCSV(faces, verts, types, barycentres, scales, filename);
+        exportToCSV(faces, verts, types, barycentres, scales, alignments, filename);
     }
     else if (c != 'y' && c != 'n')
         std::cout << "Invalid input. Try again.\n";
@@ -621,7 +685,7 @@ Point3 calculateBarycenter(Mesh input)
         total_area += f.area;
         i++;
 
-        if (i % 100 == 0) std::cout << i << "\n";
+        //if (i % 100 == 0) std::cout << i << "\n";
     }
 
     // Finally, divide the added centroids by total area
@@ -869,7 +933,7 @@ void flipShape(Mesh& input)
 void normalizeMesh(Mesh& input)
 {
     translateBarycenter(input);
-    //alignAxes(input);
+    alignAxes(input);
     //flipShape(input);
     scaleUniformly(input);
 }
