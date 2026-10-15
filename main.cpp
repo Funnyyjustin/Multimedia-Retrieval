@@ -12,8 +12,15 @@
 #include "camera.h"
 #include "fileSelector.h"
 #include "resampling.h"
+#include "Historgam.h"
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/pca.hpp>
+#include <glm/glm.hpp>
+
 
 namespace fs = std::filesystem;
+int application_mode;
 
 // Render functions
 
@@ -702,7 +709,16 @@ void alignAxes(Mesh& input)
     // Step 1: Compute Covariance Matrix (3x3)
     // Can be calculated by first putting all vertices in a Nx3 matrix V (so each row of the matrix is a xyz of a vertex in the shape)
     // Then we can get C = (1 / N) * (V^t * V), where N is the number of vertices
-
+    
+    std::vector<glm::dvec3> V;
+    V.reserve(input.vertices.size());
+    for (const auto& v : input.vertices)
+    {
+        V.emplace_back(v.x(), v.y(), v.z());
+    }
+    
+    glm::dvec3 C(0.0, 0.0, 0.0);
+    
     // Step 2: Perform Eigen decomposition
     // We have to solve det(C - l * I) = 0, where I is the identity matrix and l is lambda --> solve for lambda
     // Since C is a 3x3 matrix, we get -l^3 + c2 * lambda^2 + c1 * lambda + c0 = 0 to get the eigenvalues (l1, l2, l3)
@@ -710,13 +726,55 @@ void alignAxes(Mesh& input)
     // where li is the ith eigenvalue, and vi is the corresponding eigenvector.
     // We can use Gaussian elimination for this. After applying that, we have to normalize the result.
     // Largest eigenvalue means that its corresponding eigenvector represents the longest dimension of the shape --> same principal for the other values/vectors
+    
+    glm::dmat3 covMat = glm::computeCovarianceMatrix(V.data(), V.size(), C);
+    
+    glm::dvec3 evals;
+    glm::dmat3 evecs; 
+    int count = glm::findEigenvaluesSymReal(covMat, evals, evecs);
+    if (count != 3) {
+        return;
+    }
+    
+    // Sort from largest to smallest (evlas[0] >= evals[1] >= evals[2])
+    glm::sortEigenvalues(evals, evecs);
 
+    glm::dvec3 e1 = glm::normalize(evecs[0]);
+    glm::dvec3 e2 = glm::normalize(evecs[1]);
+    glm::dvec3 e3 = glm::normalize(evecs[2]);
+    
     // Step 3: Put the three eigenvectors together in a 3x3 rotation matrix R
     // The left column should correspond to the eigenvector with the largest eigenvalue --> same idea for the other two, left to right, large to small
     // We can then rotate all the points in our shape by applying R^t * V (the V from step 1), which gives us a matrix of all vertices of the shape, properly rotated
-
+    
+    // quarantee righthanded coordinate system
+    if (glm::dot(glm::cross(e1, e2), e3) < 0.0) {
+        e3 = -e3;
+    }
+    
+    //Rotation Matrix
+    glm::dmat3 R(e1, e2, e3);
+    
+    // Rotate the vertices 
+    for (auto& v : input.vertices) {
+        glm::dvec3 p(v.x(), v.y(), v.z());
+        glm::dvec3 pRot = glm::transpose(R) * p; // oftewel dot-product met e1, e2, e3
+        v = Point3(pRot.x, pRot.y, pRot.z);
+    }
+    
     // Update old AABB into new one
     calculateAABB(input);
+    if (application_mode == 1)
+    {
+        input.updateGLBuffers();
+    }
+}
+
+int sign(float i)
+{
+    if (i < 0)
+        return -1;
+    return 1;
 }
 
 void flipShape(Mesh& input)
@@ -730,10 +788,40 @@ void flipShape(Mesh& input)
     // Basically, all we do, is for each axis, calculate how much its weights towards either the positive or negative side
     // We can then make a 3x3 matrix F, where the diagonals are sign(fx), sign(fy) and sign(fz)
     // We multiply each set of vertex coordinates with F to apply the flipping
+    
+    float fx = 0;
+    float fy = 0;
+    float fz = 0;
+
+    for (auto face : input.faces)
+    {
+        float centersum[3]{ 0, 0, 0 };
+        for (int a : face.v)
+        {
+            centersum[0] += input.vertices[a].x();
+            centersum[1] += input.vertices[a].y();
+            centersum[2] += input.vertices[a].z();
+        }
+
+        for (int i = 0; i < 3; i++) centersum[i] /= face.v.size();
+
+        // Then, for x, y and z, we calculate fi = sum_t sign(C t,i)(C t,i)^2
+        fx += sign(centersum[0]) * pow(centersum[0], 2);
+        fy += sign(centersum[1]) * pow(centersum[1], 2);
+        fz += sign(centersum[2]) * pow(centersum[2], 2);
+    }
+
+    for (Point3& v : input.vertices)
+    {
+        v = Point3(sign(fx) * v.x(), sign(fy) * v.y(), sign(fz) * v.z());
+    }
 
     // Update old AABB into new one
     calculateAABB(input);
+    input.updateGLBuffers();
 }
+
+
 
 void normalizeMesh(Mesh& input)
 {
@@ -766,12 +854,12 @@ int main()
     std::cout << "Select mode to begin: \n";
     std::cout << "1. Rendering mode\n";
     std::cout << "2. Analyse mode\n";
+    std::cout << "3. Histogram export mode\n";
     
-    int num;
-    std::cin >> num;
+    std::cin >> application_mode;
 
     // Rendering mode
-    if (num == 1)
+    if (application_mode == 1)
     {
         fs::path selectedFile = selectModelFile("ObjectFiles");
         if (selectedFile.empty())
@@ -785,7 +873,7 @@ int main()
     }
 
     // Analyse mode
-    else if (num == 2)
+    else if (application_mode == 2)
     {
         // Analyse initial database
         fs::path objectFiles = "ObjectFiles";
@@ -798,6 +886,12 @@ int main()
 
         // Check if normalization tool works correctly
         analyseDatabase(normalized_meshes);
+    }
+    
+    //Histogram mode
+    else if (application_mode == 3)
+    {
+        runHistogramMode();
     }
 
     return 0;
