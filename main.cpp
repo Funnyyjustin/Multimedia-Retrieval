@@ -453,9 +453,6 @@ Vec3 computeAxesAngles(const Mesh& mesh)
     glm::dvec3 evals;
     glm::dmat3 evecs;
     int count = glm::findEigenvaluesSymReal(covMat, evals, evecs);
-    if (count != 3) {
-        return Vec3();
-    }
 
     // Sort from largest to smallest (evlas[0] >= evals[1] >= evals[2])
     glm::sortEigenvalues(evals, evecs);
@@ -468,7 +465,7 @@ Vec3 computeAxesAngles(const Mesh& mesh)
     double y = acos(glm::clamp(e2.y, -1.0, 1.0));
     double z = acos(glm::clamp(e3.z, -1.0, 1.0));
 
-
+    std::cout << x << " " << y << " " << z << std::endl;
     return Vec3(x, y, z);
 }
 
