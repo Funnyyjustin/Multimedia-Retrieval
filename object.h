@@ -9,6 +9,8 @@
 struct Face
 {
 	std::vector<int> v;
+	Point3 centroid;
+	double area;
 };
 
 /// <summary>

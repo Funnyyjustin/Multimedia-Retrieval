@@ -326,64 +326,6 @@ void renderObject(fs::path selectedFile)
 
 // Helper functions
 
-Point3 calculateCentroid(Face face, Mesh mesh)
-{
-    Point3 p(0, 0, 0);
-    for (const auto& v : face.v)
-    {
-        p += mesh.vertices[v];
-    }
-    p /= 3;
-    return p;
-}
-
-double calculateArea(Face face, Mesh mesh)
-{
-    // Get the three vertices
-    Point3 a = mesh.vertices[face.v[0]];
-    Point3 b = mesh.vertices[face.v[1]];
-    Point3 c = mesh.vertices[face.v[2]];
-
-    // Calculate two edge vectors of the face
-    Vec3 sideone = b - a;
-    Vec3 sidetwo = c - a;
-
-    // Calculate the cross product
-    Vec3 crossproduct = cross(sideone, sidetwo);
-
-    // Calculate area
-    auto r = 0.5f * crossproduct.length();
-
-    return r;
-}
-
-Point3 calculateBarycenter(Mesh input)
-{
-    Point3 barycenter(0, 0, 0);
-    double total_area = 0;
-    int i = 0;
-
-    for (const auto& f : input.faces)
-    {
-        // Calculate centroid of the face
-        Point3 centroid = calculateCentroid(f, input);
-
-        // Then calculate the area of the face
-        double area = calculateArea(f, input);
-
-        // Then add the centroid to the calculation
-        barycenter += centroid * area;
-        total_area += area;
-        i++;
-
-        if (i % 100 == 0) std::cout << i << "\n";
-    }
-
-    // Finally, divide the added centroids by total area
-    barycenter /= total_area;
-    return barycenter;
-}
-
 std::vector<int> flatten(std::vector<std::vector<int>>& vec)
 {
     std::vector<int> result;
@@ -630,6 +572,91 @@ std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes, int minVert = minVert
     return meshes;
 }
 
+// Precomputation functions
+
+Point3 calculateCentroid(Face face, Mesh mesh)
+{
+    Point3 p(0, 0, 0);
+    for (const auto& v : face.v)
+    {
+        p += mesh.vertices[v];
+    }
+    p /= 3;
+    return p;
+}
+
+double calculateArea(Face face, Mesh mesh)
+{
+    // Get the three vertices
+    Point3 a = mesh.vertices[face.v[0]];
+    Point3 b = mesh.vertices[face.v[1]];
+    Point3 c = mesh.vertices[face.v[2]];
+
+    // Calculate two edge vectors of the face
+    Vec3 sideone = b - a;
+    Vec3 sidetwo = c - a;
+
+    // Calculate the cross product
+    Vec3 crossproduct = cross(sideone, sidetwo);
+
+    // Calculate area
+    auto r = 0.5f * crossproduct.length();
+
+    return r;
+}
+
+Point3 calculateBarycenter(Mesh input)
+{
+    Point3 barycenter(0, 0, 0);
+    double total_area = 0;
+    int i = 0;
+
+    for (const auto& f : input.faces)
+    {
+        // Calculate centroid of the face
+        Point3 centroid = calculateCentroid(f, input);
+
+        // Then add the centroid to the calculation
+        barycenter += centroid * f.area;
+        total_area += f.area;
+        i++;
+
+        if (i % 100 == 0) std::cout << i << "\n";
+    }
+
+    // Finally, divide the added centroids by total area
+    barycenter /= total_area;
+    return barycenter;
+}
+
+void precomputeMesh(Mesh& input)
+{
+    // For each face, precompute the centroid and the area
+    for (auto& f : input.faces)
+    {
+        f.area = calculateArea(f, input);
+        f.centroid = calculateCentroid(f, input);
+    }
+
+    // Calculate barycenter of each mesh
+    input.barycenter = calculateBarycenter(input);
+}
+
+std::vector<Mesh> precomputeMeshes(std::vector<Mesh> meshes)
+{
+    int total = static_cast<int>(meshes.size());
+    std::cout << "Precomputing " << total << " meshes in parallel...\n";
+
+    #pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < total; ++i)
+    {
+        precomputeMesh(meshes[i]);
+    }
+
+    std::cout << "Finished precomputing meshes.\n";
+    return meshes;
+}
+
 // Normalisation functions + helper
 
 void calculateAABB(Mesh& input)
@@ -661,12 +688,16 @@ void translateBarycenter(Mesh& input)
 
     if (input.vertices.empty()) return;
 
-    Point3 barycenter = calculateBarycenter(input);
-    input.barycenter = barycenter;
-
     // translate the unique vertices
-    for (auto& v : input.vertices) {
-        v -= barycenter;
+    for (auto& v : input.vertices)
+    {
+        v -= input.barycenter;
+    }
+
+    // also translate the centroids of all faces
+    for (auto& f : input.faces)
+    {
+        f.centroid -= input.barycenter;
     }
 
     Point3 barycenter_new = calculateBarycenter(input);
@@ -878,13 +909,18 @@ int main()
         // Analyse initial database
         fs::path objectFiles = "ObjectFiles";
         std::vector<Mesh> original_meshes = parseDatabase(objectFiles);
+        //analyseDatabase(original_meshes);
+
+        // Resample meshes
         std::vector<Mesh> resampled_meshes = resampleMeshes(original_meshes);
-        analyseDatabase(resampled_meshes);
+        //analyseDatabase(resampled_meshes);
+
+        // Precompute values of the meshes
+        std::vector<Mesh> precomputated_meshes = precomputeMeshes(resampled_meshes);
+        analyseDatabase(precomputated_meshes);
 
         // Normalization --> remeshing, translation, (rotation), (flipping), scaling
-        std::vector<Mesh> normalized_meshes = normalizeMeshes(resampled_meshes);
-
-        // Check if normalization tool works correctly
+        std::vector<Mesh> normalized_meshes = normalizeMeshes(precomputated_meshes);
         analyseDatabase(normalized_meshes);
     }
     
