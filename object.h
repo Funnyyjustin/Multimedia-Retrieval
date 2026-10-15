@@ -23,6 +23,7 @@ public:
 	
 	Point3 minPoint;
 	Point3 maxPoint;
+	Point3 barycenter;
 	bool trisOnly;
 	bool quadsOnly;
 

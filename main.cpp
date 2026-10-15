@@ -319,6 +319,64 @@ void renderObject(fs::path selectedFile)
 
 // Helper functions
 
+Point3 calculateCentroid(Face face, Mesh mesh)
+{
+    Point3 p(0, 0, 0);
+    for (const auto& v : face.v)
+    {
+        p += mesh.vertices[v];
+    }
+    p /= 3;
+    return p;
+}
+
+double calculateArea(Face face, Mesh mesh)
+{
+    // Get the three vertices
+    Point3 a = mesh.vertices[face.v[0]];
+    Point3 b = mesh.vertices[face.v[1]];
+    Point3 c = mesh.vertices[face.v[2]];
+
+    // Calculate two edge vectors of the face
+    Vec3 sideone = b - a;
+    Vec3 sidetwo = c - a;
+
+    // Calculate the cross product
+    Vec3 crossproduct = cross(sideone, sidetwo);
+
+    // Calculate area
+    auto r = 0.5f * crossproduct.length();
+
+    return r;
+}
+
+Point3 calculateBarycenter(Mesh input)
+{
+    Point3 barycenter(0, 0, 0);
+    double total_area = 0;
+    int i = 0;
+
+    for (const auto& f : input.faces)
+    {
+        // Calculate centroid of the face
+        Point3 centroid = calculateCentroid(f, input);
+
+        // Then calculate the area of the face
+        double area = calculateArea(f, input);
+
+        // Then add the centroid to the calculation
+        barycenter += centroid * area;
+        total_area += area;
+        i++;
+
+        if (i % 100 == 0) std::cout << i << "\n";
+    }
+
+    // Finally, divide the added centroids by total area
+    barycenter /= total_area;
+    return barycenter;
+}
+
 std::vector<int> flatten(std::vector<std::vector<int>>& vec)
 {
     std::vector<int> result;
@@ -494,7 +552,7 @@ void analyseDatabase(const std::vector<Mesh>& meshes)
         else if (m.trisOnly) types[i] = 1;
         else types[i] = 2;
 
-        Point3 cumulative_point(0, 0, 0);
+        /*Point3 cumulative_point(0, 0, 0);
         for (const auto& point : m.vertices)
         {
             cumulative_point += point;
@@ -503,7 +561,8 @@ void analyseDatabase(const std::vector<Mesh>& meshes)
         {
             cumulative_point /= static_cast<double>(m.vertices.size());
         }
-        barycentres[i] = cumulative_point;
+        barycentres[i] = cumulative_point;*/
+        barycentres[i] = m.barycenter;
 
         scales[i] = { m.maxPoint - m.minPoint };
     }
@@ -591,18 +650,20 @@ void calculateAABB(Mesh& input)
 
 void translateBarycenter(Mesh& input)
 {
+    std::cout << "Translating..\n";
+
     if (input.vertices.empty()) return;
 
-    Point3 barycenter(0, 0, 0);
-    for (const auto& v : input.vertices) {
-        barycenter += v;
-    }
-    barycenter /= static_cast<double>(input.vertices.size());
+    Point3 barycenter = calculateBarycenter(input);
+    input.barycenter = barycenter;
 
     // translate the unique vertices
     for (auto& v : input.vertices) {
         v -= barycenter;
     }
+
+    Point3 barycenter_new = calculateBarycenter(input);
+    input.barycenter = barycenter_new;
 
     // Update old AABB into new one
     calculateAABB(input);
@@ -612,6 +673,8 @@ void translateBarycenter(Mesh& input)
 
 void scaleUniformly(Mesh& input)
 {
+    std::cout << "Scaling..\n";
+
     if (input.vertices.empty()) return;
 
     Point3 minpoint = input.minPoint;
