@@ -1013,6 +1013,12 @@ double getDiameter(Mesh& mesh)
     return std::sqrt(maxDistSquared);
 }
 
+double calculateConvexity(Mesh& mesh)
+{
+    // TODO: calculate convexity here
+    return 0;
+}
+
 double calculateEccentricity(Mesh& mesh)
 {
     auto l1 = mesh.ev1.length();
@@ -1022,7 +1028,6 @@ double calculateEccentricity(Mesh& mesh)
 
 std::vector<double> featureExtract(Mesh& mesh)
 {
-    
     std::vector<double> vec;
 
     // Fill vector with elementary feature descriptors
@@ -1031,7 +1036,7 @@ std::vector<double> featureExtract(Mesh& mesh)
     vec.push_back(calculateCompactness(mesh));
     vec.push_back(calculateRectangularity(mesh));
     vec.push_back(getDiameter(mesh));
-    // TODO: convexity: volume divided by convex hull volume
+    vec.push_back(calculateConvexity(mesh));
     vec.push_back(calculateEccentricity(mesh));
 
     // TODO: shape property descriptors
