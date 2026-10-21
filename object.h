@@ -33,6 +33,7 @@ public:
 	double volume;
 
 	Vec3 ev1, ev2, ev3; // Eigenvectors
+	Vec3 eigenvalues;
 
 	Mesh() = default;
 	

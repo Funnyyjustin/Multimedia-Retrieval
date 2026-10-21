@@ -9,6 +9,12 @@ struct CSVData {
     std::map<std::string, std::vector<double>> columns;
 };
 
+std::vector<double> computeFixedHistogram(
+    const std::vector<double>& values, 
+    size_t numBins, 
+    double minVal, 
+    double maxVal);
+
 // Reads a semicolon-separated CSV file (supports European comma decimals)
 CSVData readCSV(const std::string& filepath);
 

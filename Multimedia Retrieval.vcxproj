@@ -135,6 +135,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Features.cpp" />
     <ClCompile Include="glad.c" />
     <ClCompile Include="Historgam.cpp" />
     <ClCompile Include="main.cpp" />
@@ -144,9 +145,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="camera.h" />
+    <ClInclude Include="Features.h" />
     <ClInclude Include="fileSelector.h" />
     <ClInclude Include="Historgam.h" />
-    <ClInclude Include="histogram.h" />
+    <ClInclude Include="MeshSampler.h" />
     <ClInclude Include="object.h" />
     <ClInclude Include="parseobj.h" />
     <ClInclude Include="pbPlot\pbPlots.hpp" />

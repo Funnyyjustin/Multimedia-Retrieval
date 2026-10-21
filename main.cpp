@@ -14,12 +14,11 @@
 #include "fileSelector.h"
 #include "resampling.h"
 #include "Historgam.h"
+#include "Features.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/pca.hpp>
 #include <glm/glm.hpp>
-
-# define M_PI           3.14159265358979323846  /* pi */
 
 namespace fs = std::filesystem;
 int application_mode;
@@ -260,7 +259,7 @@ void renderObject(fs::path selectedFile)
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(shaderProgram);
+        glUseProgram(shaderProgram);\
 
         // Get camera position
         glm::vec3 cameraPos, camRight, camUp;
@@ -440,6 +439,86 @@ void exportToCSV(const std::vector<Mesh>& meshes, const std::vector<int>& faces,
         file << ";";
 
         file << "\n";
+    }
+}
+
+void exportFeaturesToCSV(const std::vector<Mesh>& meshes, const std::vector<std::vector<double>>& features, const std::string& filename)
+{
+    std::string fullPath = filename;
+    if (fullPath.size() < 4 || fullPath.substr(fullPath.size() - 4) != ".csv")
+    {
+        fullPath += ".csv";
+    }
+
+    std::ofstream file(fullPath);
+    if (!file.is_open())
+    {
+        std::cerr << "Error: Could not open file " << fullPath << " for writing.\n";
+        return;
+    }
+
+    if (features.empty())
+    {
+        std::cerr << "Warning: Features list is empty.\n";
+        return;
+    }
+
+    // Build CSV Header
+    file << "Shape id;Class";
+    if (features[0].size() == 106)
+    {
+        file << ";Surface Area;Compactness;Rectangularity;Diameter;Convexity;Eccentricity";
+        for (int i = 0; i < 20; ++i) file << ";A3_" << i;
+        for (int i = 0; i < 20; ++i) file << ";D1_" << i;
+        for (int i = 0; i < 20; ++i) file << ";D2_" << i;
+        for (int i = 0; i < 20; ++i) file << ";D3_" << i;
+        for (int i = 0; i < 20; ++i) file << ";D4_" << i;
+    }
+    else
+    {
+        for (size_t col = 0; col < features[0].size(); ++col)
+        {
+            file << ";Feature_" << col;
+        }
+    }
+    file << "\n";
+
+    // Write data rows
+    for (size_t i = 0; i < features.size(); ++i)
+    {
+        file << i << ";";
+        if (i < meshes.size())
+            file << meshes[i].getLabel();
+        else
+            file << "Unknown";
+
+        for (double val : features[i])
+        {
+            file << ";" << val;
+        }
+        file << "\n";
+    }
+
+    std::cout << "Successfully exported " << features.size() << " feature vectors to " << fullPath << "\n";
+}
+
+void promptSaveFeatures(const std::vector<Mesh>& meshes, const std::vector<std::vector<double>>& features)
+{
+    std::cout << "\nFeature extraction completed for " << features.size() << " meshes.\n";
+    std::cout << "Export features to CSV file? (y/n):\n";
+    char choice;
+    std::cin >> choice;
+
+    if (choice == 'y' || choice == 'Y')
+    {
+        std::cout << "Enter CSV filename:\n";
+        std::string filename;
+        std::cin >> filename;
+        exportFeaturesToCSV(meshes, features, filename);
+    }
+    else if (choice != 'n' && choice != 'N')
+    {
+        std::cout << "Invalid input. Skipping CSV export.\n";
     }
 }
 
@@ -640,26 +719,26 @@ double calculateArea(const Face& face, const Mesh& mesh)
 
 Point3 calculateBarycenter(Mesh& input)
 {
-    Point3 barycenter(0, 0, 0);
-    double total_area = 0;
+    if (input.faces.empty()) return Point3(0, 0, 0);
 
-    #pragma omp parallel for schedule(dynamic)
+    Point3 barycenter(0, 0, 0);
+    double total_area = 0.0;
+
     for (int i = 0; i < static_cast<int>(input.faces.size()); i++)
     {
         auto& f = input.faces[i];
-
-        // Then add the centroid to the calculation
         barycenter += f.centroid * f.area;
         total_area += f.area;
     }
 
-    // Finally, divide the added centroids by total area
+    if (total_area <= 1e-9 || std::isnan(total_area))
+    {
+        input.area = 0.0;
+        return Point3(0, 0, 0);
+    }
+
     barycenter /= total_area;
     input.area = total_area;
-
-    //barycenter.e[0] = std::round(barycenter.e[0]);
-    //barycenter.e[1] = std::round(barycenter.e[1]);
-    //barycenter.e[2] = std::round(barycenter.e[2]);
 
     return barycenter;
 }
@@ -683,7 +762,6 @@ double calculateVolume(Mesh& input)
 void precomputeMesh(Mesh& input)
 {
     // For each face, precompute the centroid and the area
-    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < static_cast<int>(input.faces.size()); i++)
     {
         auto& f = input.faces[i];
@@ -775,7 +853,7 @@ void scaleUniformly(Mesh& input)
     Point3 maxpoint = input.maxPoint;
 
     float largest_dim = std::max({maxpoint.e[0] - minpoint.e[0], maxpoint.e[1] - minpoint.e[1], maxpoint.e[2] - minpoint.e[2]});
-    if (largest_dim == 0.0f) return;
+    if (largest_dim <= 1e-9f || std::isnan(largest_dim)) return;
 
     double factor = 1.0 / largest_dim;
     for (auto& v : input.vertices)
@@ -829,10 +907,11 @@ void alignAxes(Mesh& input)
     
     glm::dmat3 covMat = glm::computeCovarianceMatrix(V.data(), V.size(), C);
     
-    glm::dvec3 evals;
+    glm::dvec3 evals(1.0, 1.0, 1.0);
     glm::dmat3 evecs; 
     int count = glm::findEigenvaluesSymReal(covMat, evals, evecs);
-    if (count != 3) {
+    if (count != 3 || std::isnan(evals[0]) || std::isnan(evals[1]) || std::isnan(evals[2])) {
+        input.eigenvalues = Vec3(1.0, 1.0, 1.0);
         return;
     }
     
@@ -874,6 +953,8 @@ void alignAxes(Mesh& input)
     input.ev1 = Vec3(e1.x, e1.y, e1.z);
     input.ev2 = Vec3(e2.x, e2.y, e2.z);
     input.ev3 = Vec3(e3.x, e3.y, e3.z);
+    input.eigenvalues = Vec3(evals[0], evals[1], evals[2]);
+
     
     // Update old AABB into new one
     calculateAABB(input);
@@ -966,96 +1047,6 @@ std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
     return meshes;
 }
 
-// Feature extraction functions
-
-double calculateCompactness(Mesh& mesh)
-{
-    double area = mesh.area;
-    double volume = mesh.volume;
-
-    return ((area * area * area) / (36 * M_PI * volume * volume));
-}
-
-double calculateVolumeAABB(Mesh& mesh)
-{
-    auto min = mesh.minPoint;
-    auto max = mesh.maxPoint;
-
-    return ((max.e[0] - min.e[0]) * (max.e[1] - min.e[1]) * (max.e[2] - min.e[2]));
-}
-
-double calculateRectangularity(Mesh& mesh)
-{
-    double volume = mesh.volume;
-    double volumeAABB = calculateVolumeAABB(mesh);
-    return volume / volumeAABB;
-}
-
-double getDiameter(Mesh& mesh)
-{
-    double maxDistSquared = 0.0;
-    auto vertices = mesh.vertices;
-
-    for (size_t i = 0; i < vertices.size(); ++i)
-    {
-        for (size_t j = i + 1; j < vertices.size(); ++j)
-        {
-            double dx = vertices[i].e[0] - vertices[j].e[0];
-            double dy = vertices[i].e[1] - vertices[j].e[1];
-            double dz = vertices[i].e[2] - vertices[j].e[2];
-
-            double distSquared = dx * dx + dy * dy + dz * dz;
-
-            maxDistSquared = std::max(maxDistSquared, distSquared);
-        }
-    }
-
-    return std::sqrt(maxDistSquared);
-}
-
-double calculateConvexity(Mesh& mesh)
-{
-    // TODO: calculate convexity here
-    return 0;
-}
-
-double calculateEccentricity(Mesh& mesh)
-{
-    auto l1 = mesh.ev1.length();
-    auto l3 = mesh.ev3.length();
-    return l1 / l3;
-}
-
-std::vector<double> featureExtract(Mesh& mesh)
-{
-    std::vector<double> vec;
-
-    // Fill vector with elementary feature descriptors
-    // Surface area; compactness; 3D rectangularity; diameter; convexity; eccentricity
-    vec.push_back(mesh.area);
-    vec.push_back(calculateCompactness(mesh));
-    vec.push_back(calculateRectangularity(mesh));
-    vec.push_back(getDiameter(mesh));
-    vec.push_back(calculateConvexity(mesh));
-    vec.push_back(calculateEccentricity(mesh));
-
-    // TODO: shape property descriptors
-
-    return vec;
-}
-
-std::vector<std::vector<double>> featureExtraction(std::vector<Mesh> meshes)
-{
-    std::vector<std::vector<double>> vec;
-
-    for (auto& m : meshes)
-    {
-        vec.push_back(featureExtract(m));
-    }
-
-    return vec;
-}
-
 // Main functions
 
 int main()
@@ -1069,6 +1060,7 @@ int main()
     std::cout << "3. Histogram export mode\n";
     
     std::cin >> application_mode;
+
 
     // Rendering mode
     if (application_mode == 1)
@@ -1107,6 +1099,9 @@ int main()
 
         // Feature extraction for all meshes
         std::vector<std::vector<double>> elem_desc = featureExtraction(normalized_meshes);
+
+        // Prompt to save feature vectors to CSV
+        promptSaveFeatures(normalized_meshes, elem_desc);
     }
     
     //Histogram mode
@@ -1117,3 +1112,7 @@ int main()
 
     return 0;
 }
+
+
+
+

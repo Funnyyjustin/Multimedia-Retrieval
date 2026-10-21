@@ -12,6 +12,41 @@
 #include <iomanip>
 #include <cmath>
 
+std::vector<double> computeFixedHistogram(
+    const std::vector<double>& values, 
+    size_t numBins, 
+    double minVal, 
+    double maxVal)
+{
+    std::vector<double> bins(numBins, 0.0);
+    if (values.empty() || numBins == 0 || maxVal <= minVal) return bins;
+
+    double binWidth = (maxVal - minVal) / static_cast<double>(numBins);
+
+    for (double val : values)
+    {
+        // Clamp waardes buiten het bereik netjes naar de uiterste bins
+        if (val <= minVal) {
+            bins[0]++;
+        } else if (val >= maxVal) {
+            bins[numBins - 1]++;
+        } else {
+            int idx = static_cast<int>((val - minVal) / binWidth);
+            if (idx >= static_cast<int>(numBins)) idx = static_cast<int>(numBins - 1);
+            bins[idx]++;
+        }
+    }
+
+    // Normaliseer relatieve frequentie zodat som = 1.0 (onafhankelijk van aantal samples)
+    double total = static_cast<double>(values.size());
+    for (double& b : bins) {
+        b /= total;
+    }
+
+    return bins;
+}
+
+
 static std::string formatBound(double val, double binWidth) {
     double absVal = std::abs(val);
     if (absVal < 1e-9) {

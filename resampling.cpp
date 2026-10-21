@@ -62,6 +62,9 @@ void resampleMesh(Mesh& input, int minVert, int maxVert)
     while (static_cast<int>(input.vertices.size()) > maxVert)
     {
         int previousCount = input.vertsSize();
+        if (input.faces.size() <= 2000)
+            break;
+
         downsampleMesh(input, minVert);
 
         // Break if decimation cannot remove any more vertices to prevent an infinite loop
@@ -233,6 +236,7 @@ void downsampleMesh(Mesh& input, int targetVertices)
 
     int currentVertices = static_cast<int>(input.vertices.size());
     if (targetVertices > 0 && currentVertices <= targetVertices) return;
+    if (input.faces.size() <= 2000) return;
 
     // 1. Build vertex-to-face adjacency list
     std::vector<std::vector<int>> vertexFaces(input.vertices.size());
@@ -240,7 +244,10 @@ void downsampleMesh(Mesh& input, int targetVertices)
     {
         for (int vIdx : input.faces[fIdx].v)
         {
-            vertexFaces[vIdx].push_back(fIdx);
+            if (vIdx >= 0 && vIdx < static_cast<int>(input.vertices.size()))
+            {
+                vertexFaces[vIdx].push_back(fIdx);
+            }
         }
     }
 
@@ -259,6 +266,10 @@ void downsampleMesh(Mesh& input, int targetVertices)
         {
             int u = face.v[i];
             int v = face.v[(i + 1) % numV];
+            if (u < 0 || u >= static_cast<int>(input.vertices.size()) ||
+                v < 0 || v >= static_cast<int>(input.vertices.size()))
+                continue;
+
             uint64_t key = makeEdgeKey(u, v);
 
             if (seenEdges.insert(key).second)
@@ -275,6 +286,7 @@ void downsampleMesh(Mesh& input, int targetVertices)
     // 4. Track removed vertices and faces
     std::vector<bool> vertexRemoved(input.vertices.size(), false);
     std::vector<bool> faceRemoved(input.faces.size(), false);
+    int activeFaces = static_cast<int>(input.faces.size());
 
     // Reduce vertices by up to 20% per step, respecting targetVertices lower bound
     int stepTarget;
@@ -288,7 +300,7 @@ void downsampleMesh(Mesh& input, int targetVertices)
     }
 
     // 5. Edge collapse decimation loop
-    while (currentVertices > stepTarget && !pq.empty())
+    while (currentVertices > stepTarget && activeFaces > 2000 && !pq.empty())
     {
         DecimateEdge edge = pq.top();
         pq.pop();
@@ -323,6 +335,7 @@ void downsampleMesh(Mesh& input, int targetVertices)
             if (containsV)
             {
                 faceRemoved[fIdx] = true;
+                activeFaces--;
             }
             else
             {
@@ -341,12 +354,28 @@ void downsampleMesh(Mesh& input, int targetVertices)
     }
 
     // 6. Compact mesh and rebuild contiguous indices
+    // Find vertices actively referenced by non-removed faces
+    std::vector<bool> vertexUsed(input.vertices.size(), false);
+    for (size_t i = 0; i < input.faces.size(); ++i)
+    {
+        if (!faceRemoved[i])
+        {
+            for (int idx : input.faces[i].v)
+            {
+                if (idx >= 0 && idx < static_cast<int>(input.vertices.size()) && !vertexRemoved[idx])
+                {
+                    vertexUsed[idx] = true;
+                }
+            }
+        }
+    }
+
     std::vector<Point3> newVertices;
     std::vector<int> indexMap(input.vertices.size(), -1);
 
     for (size_t i = 0; i < input.vertices.size(); ++i)
     {
-        if (!vertexRemoved[i])
+        if (!vertexRemoved[i] && vertexUsed[i])
         {
             indexMap[i] = static_cast<int>(newVertices.size());
             newVertices.push_back(input.vertices[i]);
@@ -359,11 +388,20 @@ void downsampleMesh(Mesh& input, int targetVertices)
         if (!faceRemoved[i])
         {
             Face f = input.faces[i];
+            bool valid = true;
             for (int& idx : f.v)
             {
+                if (idx < 0 || idx >= static_cast<int>(indexMap.size()) || indexMap[idx] == -1)
+                {
+                    valid = false;
+                    break;
+                }
                 idx = indexMap[idx];
             }
-            newFaces.push_back(f);
+            if (valid)
+            {
+                newFaces.push_back(f);
+            }
         }
     }
 
