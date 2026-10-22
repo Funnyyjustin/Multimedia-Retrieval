@@ -154,6 +154,7 @@
     <ClInclude Include="pbPlot\pbPlots.hpp" />
     <ClInclude Include="pbPlot\supportLib.hpp" />
     <ClInclude Include="primitive.h" />
+    <ClInclude Include="QuickSort.h" />
     <ClInclude Include="resampling.h" />
     <ClInclude Include="vec3.h" />
   </ItemGroup>

@@ -15,6 +15,7 @@
 #include "resampling.h"
 #include "Historgam.h"
 #include "Features.h"
+#include "QuickSort.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/pca.hpp>
@@ -76,6 +77,8 @@ void renderObject(fs::path selectedFile)
     Parser p;
     Mesh obj = p.parseOFF(selectedFile.string());
     GLsizei vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+    std::cout << "Number of vertices: " << obj.vertsSize() << std::endl;
+    std::cout << "Number of faces: " << obj.primsSize() << std::endl;
 
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -165,7 +168,6 @@ void renderObject(fs::path selectedFile)
     int modelViewLoc = glGetUniformLocation(shaderProgram, "uModelView");
     int useLightingLoc = glGetUniformLocation(shaderProgram, "uUseLighting");
     GLint colorLoc = glGetUniformLocation(shaderProgram, "uColor");
-    std::cout << "colorLoc = " << colorLoc << std::endl;
 
     float lastFrameTime = 0.0f;
 
@@ -326,6 +328,20 @@ void renderObject(fs::path selectedFile)
 }
 
 // Helper functions
+
+void renderObject(int id)
+{
+    fs::path path = selectModelFile(id);
+    renderObject(path);
+}
+
+void renderObjects(std::vector<int> ids)
+{
+    for (int id : ids)
+    {
+        renderObject(id);
+    }
+}
 
 std::vector<int> flatten(std::vector<std::vector<int>>& vec)
 {
@@ -1047,6 +1063,81 @@ std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
     return meshes;
 }
 
+std::vector<std::vector<float>> getDataDeviations()
+{
+    std::ifstream file("histograms.csv");
+    std::vector<std::vector<float>> data;
+    float sumFaces = 0;
+    float sumVerts = 0;
+    int total = 0;
+
+    // Read csv file
+    if (file.is_open())
+    {
+        string line;
+        std::getline(file, line); // skip headers
+        while (std::getline(file, line))
+        {
+            std::vector<float> row;
+            std::stringstream ss(line);
+
+            string word;
+            float f;
+            // read id
+            std::getline(ss, word, ';');
+            f = std::stof(word);
+            row.push_back(f);
+
+            // read number of faces for current shape
+            std::getline(ss, word, ';');
+            f = std::stof(word);
+            row.push_back(f);
+            sumFaces += f;
+
+            // read number of vertices for current shape
+            std::getline(ss, word, ';');
+            f = std::stof(word);
+            row.push_back(f);
+            sumVerts += f;
+
+            total++;
+            data.push_back(row);
+        }
+    }
+
+    // calculate the standard deviation for the faces and vertices
+    float avgFaces = sumFaces / total;
+    float avgVerts = sumVerts / total;
+    std::cout << "Average number of vertices: " << avgVerts << std::endl;
+    std::cout << "Average number of faces: " << avgFaces << std::endl;
+
+    float facesSTDsum = 0;
+    float vertsSTDsum = 0;
+
+    for (int i = 0; i < data.size(); i++)
+    {
+        facesSTDsum += powf(data[i][1] - avgFaces, 2);
+        vertsSTDsum += powf(data[i][2] - avgVerts, 2);
+    }
+
+    facesSTDsum /= total;
+    vertsSTDsum /= total;
+
+    float sigmaFaces = sqrtf(facesSTDsum);
+    float sigmaVerts = sqrtf(vertsSTDsum);
+
+    // calculate for each shape how many standard deviations from average
+    for (int i = 0; i < data.size(); i++)
+    {
+        data[i][1] = fabs(data[i][1] - avgFaces) / sigmaFaces;
+        data[i][2] = fabs(data[i][2] - avgVerts) / sigmaVerts;
+    }
+
+
+
+    return data;
+}
+
 // Main functions
 
 int main()
@@ -1058,6 +1149,7 @@ int main()
     std::cout << "1. Rendering mode\n";
     std::cout << "2. Feature extraction mode\n";
     std::cout << "3. Histogram export mode\n";
+    std::cout << "4. Outlier mode \n";
     
     std::cin >> application_mode;
 
@@ -1108,6 +1200,27 @@ int main()
     else if (application_mode == 3)
     {
         runHistogramMode();
+    }
+
+    else if (application_mode == 4) 
+    {
+        std::cout << "Reading .csv file..." << std::endl;
+        std::vector<std::vector<float>> dataDeviations = getDataDeviations();
+        std::cout << "Read csv and calculated standard deviations" << std::endl;
+        // after sorting, low number of deviations away from average are low indeces and high number of deviations away are high indeces
+        int index = 2; // 1 = faces, 2 = vertices
+
+        quicksort(dataDeviations, index, 0, dataDeviations.size() - 1);
+
+        std::vector<int> outliers;
+        outliers.push_back(dataDeviations[0][0]);
+        for (int i = 0; dataDeviations[dataDeviations.size() - 1 - i][index] >= 3; i++)
+        {
+            int elem = dataDeviations.size() - 1 - i;
+            outliers.push_back(dataDeviations[elem][0]);
+        }
+
+        renderObjects(outliers);
     }
 
     return 0;
