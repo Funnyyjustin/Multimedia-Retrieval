@@ -27,6 +27,12 @@ struct FeatureDatabase {
     std::vector<ShapeFeatures> allShapes;
 };
 
+// Range bounds for histogram binning
+struct FeatureBounds {
+    double minVal = 0.0;
+    double maxVal = 1.0;
+};
+
 std::vector<double> computeFixedHistogram(
     const std::vector<double>& values, 
     size_t numBins, 
@@ -58,7 +64,9 @@ bool exportHistogram(
     bool normalizeCount = true,
     bool normalizeDataValues = false,
     double width = 800,
-    double height = 700
+    double height = 700,
+    double fixedMinVal = 0.0,
+    double fixedMaxVal = -1.0
 );
 
 // Main interactive mode for exporting histograms and feature charts

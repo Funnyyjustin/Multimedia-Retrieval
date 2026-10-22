@@ -119,20 +119,20 @@ static std::string formatBound(double val, double binWidth) {
         return "0";
     }
     
-    if (absVal >= 100000.0 || (absVal < 0.001 && absVal > 0.0)) {
+    if (absVal >= 10000000.0 || (absVal < 0.001 && absVal > 0.0)) {
         std::ostringstream ss;
         ss << std::scientific << std::setprecision(1) << val;
         return ss.str();
     }
     
-    if (binWidth >= 1.0) {
+    if (binWidth >= 5.0) {
         return std::to_string(static_cast<long long>(std::round(val)));
     }
     
     std::ostringstream ss;
-    if (binWidth >= 0.1) {
+    if (binWidth >= 0.5) {
         ss << std::fixed << std::setprecision(1) << val;
-    } else if (binWidth >= 0.01) {
+    } else if (binWidth >= 0.05) {
         ss << std::fixed << std::setprecision(2) << val;
     } else {
         ss << std::fixed << std::setprecision(3) << val;
@@ -416,6 +416,190 @@ static bool attachClassesFromReference(FeatureDatabase& db, const std::string& r
     return db.hasClasses;
 }
 
+// Scans relevant dataset files to dynamically discover consistent maximum bounds
+// for mesh statistics shared between histograms.csv, full_features_1.csv, and full_features_2.csv
+static std::map<std::string, double> getCrossDatasetMeshStatsMax() {
+    static std::map<std::string, double> cachedMax;
+    static bool scanned = false;
+    if (scanned) return cachedMax;
+
+    cachedMax["Number of faces"] = 343920.0;
+    cachedMax["Number of vertices"] = 98256.0;
+    cachedMax["Face type"] = 1.0;
+
+    std::vector<std::string> candidateFiles = {
+        "histograms.csv",
+        "full_features_1.csv",
+        "full_features_2.csv"
+    };
+
+    for (const auto& fn : candidateFiles) {
+        if (!std::filesystem::exists(fn)) continue;
+        std::ifstream file(fn);
+        if (!file.is_open()) continue;
+
+        std::string line;
+        if (!std::getline(file, line)) continue;
+        if (!line.empty() && static_cast<unsigned char>(line[0]) == 0xEF &&
+            line.size() >= 3 &&
+            static_cast<unsigned char>(line[1]) == 0xBB &&
+            static_cast<unsigned char>(line[2]) == 0xBF) {
+            line = line.substr(3);
+        }
+
+        std::vector<std::string> headers;
+        {
+            std::stringstream ss(line);
+            std::string col;
+            while (std::getline(ss, col, ';')) {
+                col.erase(0, col.find_first_not_of(" \t\r\n"));
+                col.erase(col.find_last_not_of(" \t\r\n") + 1);
+                headers.push_back(col);
+            }
+        }
+
+        int facesCol = -1, vertCol = -1, typeCol = -1;
+        for (size_t i = 0; i < headers.size(); ++i) {
+            if (headers[i] == "Number of faces") facesCol = static_cast<int>(i);
+            else if (headers[i] == "Number of vertices") vertCol = static_cast<int>(i);
+            else if (headers[i] == "Face type") typeCol = static_cast<int>(i);
+        }
+
+        while (std::getline(file, line)) {
+            if (line.empty()) continue;
+            std::stringstream ss(line);
+            std::string cell;
+            std::vector<std::string> cells;
+            while (std::getline(ss, cell, ';')) {
+                cell.erase(0, cell.find_first_not_of(" \t\r\n"));
+                cell.erase(cell.find_last_not_of(" \t\r\n") + 1);
+                std::replace(cell.begin(), cell.end(), ',', '.');
+                cells.push_back(cell);
+            }
+
+            if (facesCol >= 0 && facesCol < static_cast<int>(cells.size()) && !cells[facesCol].empty()) {
+                try {
+                    double val = std::stod(cells[facesCol]);
+                    if (val > cachedMax["Number of faces"]) cachedMax["Number of faces"] = val;
+                } catch (...) {}
+            }
+            if (vertCol >= 0 && vertCol < static_cast<int>(cells.size()) && !cells[vertCol].empty()) {
+                try {
+                    double val = std::stod(cells[vertCol]);
+                    if (val > cachedMax["Number of vertices"]) cachedMax["Number of vertices"] = val;
+                } catch (...) {}
+            }
+            if (typeCol >= 0 && typeCol < static_cast<int>(cells.size()) && !cells[typeCol].empty()) {
+                try {
+                    double val = std::stod(cells[typeCol]);
+                    if (val > cachedMax["Face type"]) cachedMax["Face type"] = val;
+                } catch (...) {}
+            }
+        }
+    }
+
+    scanned = true;
+    return cachedMax;
+}
+
+// Determines uniform range bounds [minVal, maxVal] per feature
+// Ensuring all histograms always start at 0, and share identical bin widths and bounds across datasets
+static FeatureBounds getFeatureBounds(
+    const std::string& featName,
+    const std::string& fileStem,
+    const FeatureDatabase& currentDb
+) {
+    FeatureBounds fb;
+    fb.minVal = 0.0; // All histograms start at 0 as requested
+
+    // 1. Shared mesh statistics across histograms.csv, full_features_1.csv, and full_features_2.csv
+    if (featName == "Number of faces" || featName == "Number of vertices" || featName == "Face type") {
+        auto crossMax = getCrossDatasetMeshStatsMax();
+        fb.minVal = 0.0;
+        fb.maxVal = crossMax[featName];
+        if (fb.maxVal <= fb.minVal) fb.maxVal = fb.minVal + 1.0;
+        return fb;
+    }
+
+    // 2. Normalized geometry descriptors in full_features_2.csv and full_featuress_3.csv
+    if (featName == "Area" || featName == "Surface Area") {
+        fb.minVal = 0.0;
+        fb.maxVal = (fileStem == "full_features_1") ? 1.27671e+17 : 45.6332;
+        return fb;
+    }
+    if (featName == "Volume") {
+        fb.minVal = 0.0;
+        fb.maxVal = (fileStem == "full_features_1") ? 1.08189e+24 : 1.24582;
+        return fb;
+    }
+    if (featName == "Compactness") {
+        fb.minVal = 0.0;
+        fb.maxVal = 1000.0;
+        return fb;
+    }
+    if (featName == "Rectangularity") {
+        fb.minVal = 0.0;
+        fb.maxVal = 7.04027;
+        return fb;
+    }
+    if (featName == "Diameter") {
+        fb.minVal = 0.0;
+        fb.maxVal = 1.51025;
+        return fb;
+    }
+    if (featName == "Convexity") {
+        fb.minVal = 0.0;
+        fb.maxVal = 1.0;
+        return fb;
+    }
+    if (featName == "Eccentricity") {
+        fb.minVal = 0.0;
+        fb.maxVal = 59964.6;
+        return fb;
+    }
+    if (featName.rfind("Scale", 0) == 0) {
+        fb.minVal = 0.0;
+        fb.maxVal = (fileStem == "full_features_1") ? 4.62444e+08 : 1.0;
+        return fb;
+    }
+    if (featName.rfind("EV", 0) == 0) {
+        fb.minVal = -1.0;
+        fb.maxVal = 1.0;
+        return fb;
+    }
+
+    // Fallback: Compute maximum across all shapes in current database, starting at 0
+    double maxVal = 0.0;
+    double minVal = 0.0;
+    bool hasData = false;
+    for (const auto& s : currentDb.allShapes) {
+        auto it = s.elementary.find(featName);
+        if (it != s.elementary.end()) {
+            double v = it->second;
+            if (!std::isnan(v) && !std::isinf(v)) {
+                if (!hasData) {
+                    minVal = v;
+                    maxVal = v;
+                    hasData = true;
+                } else {
+                    if (v < minVal) minVal = v;
+                    if (v > maxVal) maxVal = v;
+                }
+            }
+        }
+    }
+
+    if (!hasData) {
+        fb.minVal = 0.0;
+        fb.maxVal = 1.0;
+        return fb;
+    }
+
+    fb.minVal = (minVal < 0.0) ? minVal : 0.0;
+    fb.maxVal = (maxVal > fb.minVal + 0.001) ? maxVal : (fb.minVal + 1.0);
+    return fb;
+}
+
 bool exportClassHistogramLinePlot(
     const std::string& className,
     const std::string& featureName,
@@ -530,7 +714,9 @@ bool exportHistogram(
     bool normalizeCount,
     bool normalizeDataValues,
     double width,
-    double height
+    double height,
+    double fixedMinVal,
+    double fixedMaxVal
 )
 {
     if (data.empty() || numBins == 0) {
@@ -540,12 +726,22 @@ bool exportHistogram(
     
     std::vector<double> processedData = data;
 
-    double minVal = *std::min_element(processedData.begin(), processedData.end());
-    double maxVal = *std::max_element(processedData.begin(), processedData.end());
-    
-    if (maxVal - minVal < 0.001)
-    {
-        maxVal += 0.001;
+    double minVal = 0.0;
+    double maxVal = 1.0;
+
+    if (fixedMaxVal > fixedMinVal) {
+        minVal = fixedMinVal;
+        maxVal = fixedMaxVal;
+    } else {
+        minVal = 0.0;
+        double dataMin = *std::min_element(processedData.begin(), processedData.end());
+        if (dataMin < 0.0) {
+            minVal = dataMin;
+        }
+        maxVal = *std::max_element(processedData.begin(), processedData.end());
+        if (maxVal - minVal < 0.001) {
+            maxVal = minVal + 1.0;
+        }
     }
     
     if (normalizeDataValues && (maxVal > minVal))
@@ -553,6 +749,8 @@ bool exportHistogram(
         for (double& x : processedData)
         {
             x = (x - minVal) / (maxVal - minVal);
+            if (x < 0.0) x = 0.0;
+            if (x > 1.0) x = 1.0;
         }
         minVal = 0.0;
         maxVal = 1.0;
@@ -563,6 +761,7 @@ bool exportHistogram(
     
     for (double val : processedData)
     {
+        if (std::isnan(val) || std::isinf(val)) continue;
         int binIndex = static_cast<int>((val - minVal) / binWidth);
         if (binIndex >= static_cast<int>(numBins))
         {
@@ -797,9 +996,15 @@ void runHistogramMode() {
                     }
                 }
 
+                FeatureBounds fb = getFeatureBounds(featName, fileStem, db);
+                double stepWidth = (fb.maxVal - fb.minVal) / static_cast<double>(bins);
+                std::cout << "  -> Feature: " << featName 
+                          << " | Uniform Range: [" << fb.minVal << " - " << fb.maxVal << "]"
+                          << " | Bin width: " << stepWidth << "\n";
+
                 std::string outFile = "images/hist_" + sanitizeName(fileStem) + "_" + sanitizeName(featName) + ".png";
                 std::string title = featName;
-                if (exportHistogram(vals, outFile, title, bins, normalizeCount, normalizeData)) {
+                if (exportHistogram(vals, outFile, title, bins, normalizeCount, normalizeData, 800, 700, fb.minVal, fb.maxVal)) {
                     exportedCount++;
                 }
             }
@@ -940,7 +1145,8 @@ void runHistogramMode() {
                     }
                 }
                 std::string title = clsName + " - " + featName;
-                if (exportHistogram(vals, outFile, title, elemBins, normCount, normData)) {
+                FeatureBounds fb = getFeatureBounds(featName, fileStem, db);
+                if (exportHistogram(vals, outFile, title, elemBins, normCount, normData, 800, 700, fb.minVal, fb.maxVal)) {
                     exportedCount++;
                 }
             }
