@@ -1,4 +1,4 @@
-﻿#include "Historgam.h"
+#include "Historgam.h"
 #include "pbPlot/pbPlots.hpp"
 #include "pbPlot/supportLib.hpp"
 
@@ -158,6 +158,12 @@ CSVData readCSV(const std::string& filepath) {
 
     std::string line;
     if (std::getline(file, line)) {
+        if (!line.empty() && static_cast<unsigned char>(line[0]) == 0xEF &&
+            line.size() >= 3 &&
+            static_cast<unsigned char>(line[1]) == 0xBB &&
+            static_cast<unsigned char>(line[2]) == 0xBF) {
+            line = line.substr(3);
+        }
         std::stringstream ss(line);
         std::string colName;
         while (std::getline(ss, colName, ';')) {
@@ -204,6 +210,14 @@ FeatureDatabase parseFeatureCSV(const std::string& filepath) {
 
     std::string line;
     if (!std::getline(file, line)) return db;
+
+    // Handle optional UTF-8 BOM
+    if (!line.empty() && static_cast<unsigned char>(line[0]) == 0xEF &&
+        line.size() >= 3 &&
+        static_cast<unsigned char>(line[1]) == 0xBB &&
+        static_cast<unsigned char>(line[2]) == 0xBF) {
+        line = line.substr(3);
+    }
 
     // Parse header line
     std::vector<std::string> headers;
@@ -267,6 +281,8 @@ FeatureDatabase parseFeatureCSV(const std::string& filepath) {
         db.elementaryFeatureNames.push_back(h);
     }
 
+    db.hasClasses = (classCol != -1);
+
     std::map<std::string, bool> classSeen;
     while (std::getline(file, line)) {
         if (line.empty()) continue;
@@ -286,10 +302,10 @@ FeatureDatabase parseFeatureCSV(const std::string& filepath) {
         if (shapeIdCol >= 0 && shapeIdCol < static_cast<int>(cells.size()) && !cells[shapeIdCol].empty()) {
             try { shape.shapeId = std::stoi(cells[shapeIdCol]); } catch (...) {}
         }
-        if (classCol >= 0 && classCol < static_cast<int>(cells.size()) && !cells[classCol].empty()) {
+        if (db.hasClasses && classCol >= 0 && classCol < static_cast<int>(cells.size()) && !cells[classCol].empty()) {
             shape.className = cells[classCol];
         } else {
-            shape.className = "DefaultClass";
+            shape.className = "";
         }
 
         for (const auto& hName : db.histogramFeatureNames) {
@@ -318,14 +334,86 @@ FeatureDatabase parseFeatureCSV(const std::string& filepath) {
             }
         }
 
-        if (!classSeen[shape.className]) {
-            classSeen[shape.className] = true;
-            db.classNames.push_back(shape.className);
+        if (db.hasClasses && !shape.className.empty()) {
+            if (!classSeen[shape.className]) {
+                classSeen[shape.className] = true;
+                db.classNames.push_back(shape.className);
+            }
+            db.classes[shape.className].push_back(shape);
         }
-        db.classes[shape.className].push_back(shape);
+
+        db.allShapes.push_back(shape);
     }
 
     return db;
+}
+
+// Attaches class names to shapes from a reference CSV (such as full_featuress_3.csv)
+static bool attachClassesFromReference(FeatureDatabase& db, const std::string& refCsvPath) {
+    std::ifstream file(refCsvPath);
+    if (!file.is_open()) return false;
+
+    std::string line;
+    if (!std::getline(file, line)) return false;
+
+    std::vector<std::string> headers;
+    {
+        std::stringstream ss(line);
+        std::string col;
+        while (std::getline(ss, col, ';')) {
+            col.erase(0, col.find_first_not_of(" \t\r\n"));
+            col.erase(col.find_last_not_of(" \t\r\n") + 1);
+            headers.push_back(col);
+        }
+    }
+
+    int idCol = -1, classCol = -1;
+    for (size_t i = 0; i < headers.size(); ++i) {
+        if (headers[i] == "Shape id" || headers[i] == "Shape ID" || headers[i] == "id") idCol = static_cast<int>(i);
+        if (headers[i] == "Class" || headers[i] == "class" || headers[i] == "Label") classCol = static_cast<int>(i);
+    }
+
+    if (idCol == -1 || classCol == -1) return false;
+
+    std::map<int, std::string> idToClass;
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        std::string cell;
+        std::vector<std::string> cells;
+        while (std::getline(ss, cell, ';')) {
+            cell.erase(0, cell.find_first_not_of(" \t\r\n"));
+            cell.erase(cell.find_last_not_of(" \t\r\n") + 1);
+            cells.push_back(cell);
+        }
+        if (cells.size() > static_cast<size_t>(std::max(idCol, classCol))) {
+            try {
+                int id = std::stoi(cells[idCol]);
+                idToClass[id] = cells[classCol];
+            } catch (...) {}
+        }
+    }
+
+    if (idToClass.empty()) return false;
+
+    db.classes.clear();
+    db.classNames.clear();
+    std::map<std::string, bool> classSeen;
+
+    for (auto& s : db.allShapes) {
+        auto it = idToClass.find(s.shapeId);
+        if (it != idToClass.end()) {
+            s.className = it->second;
+            if (!classSeen[s.className]) {
+                classSeen[s.className] = true;
+                db.classNames.push_back(s.className);
+            }
+            db.classes[s.className].push_back(s);
+        }
+    }
+
+    db.hasClasses = !db.classNames.empty();
+    return db.hasClasses;
 }
 
 bool exportClassHistogramLinePlot(
@@ -359,6 +447,7 @@ bool exportClassHistogramLinePlot(
     std::string titleStr = className + " - " + featureName + " (" + std::to_string(shapes.size()) + " shapes)";
     std::wstring wtitle(titleStr.begin(), titleStr.end());
     settings->title = toVector(wtitle.c_str());
+
     settings->xLabel = toVector(info.xLabel.c_str());
     settings->yLabel = toVector(L"Relative Frequency");
 
@@ -410,7 +499,7 @@ bool exportClassHistogramLinePlot(
     settings->autoPadding = true;
 
     RGBABitmapImageReference* imageRef = CreateRGBABitmapImageReference();
-    StringReference* errorMessage = CreateStringReference(toVector(L""));
+    StringReference* errorMessage = CreateStringReferenceLengthValue(0, L' ');
 
     bool success = DrawScatterPlotFromSettings(imageRef, settings, errorMessage);
 
@@ -555,7 +644,7 @@ bool exportHistogram(
     settings->barBorder = true;
     
     RGBABitmapImageReference* imageRef = CreateRGBABitmapImageReference();
-    StringReference* errorMessage = CreateStringReference(toVector(L""));
+    StringReference* errorMessage = CreateStringReferenceLengthValue(0, L' ');
 
     bool success = DrawBarPlotFromSettings(imageRef, settings, errorMessage);
 
@@ -594,7 +683,7 @@ void runHistogramMode() {
     std::filesystem::create_directories("images");
 
     std::cout << "\n=== HISTOGRAM & FEATURE EXPORT MODE ===\n";
-    std::cout << "Enter CSV filename or path (e.g. full_featuress_3.csv): ";
+    std::cout << "Enter CSV filename or path (e.g. histograms.csv, full_featuress_3.csv, full_features_1.csv, full_features_2.csv): ";
     std::string csvPath;
     std::cin >> csvPath;
 
@@ -602,64 +691,125 @@ void runHistogramMode() {
         csvPath = csvPath.substr(1, csvPath.size() - 2);
     }
 
+    // Smart file path resolution
+    if (!std::filesystem::exists(csvPath)) {
+        if (std::filesystem::exists(csvPath + ".csv")) {
+            csvPath = csvPath + ".csv";
+        } else if (csvPath == "histograms" || csvPath == "histogram") {
+            if (std::filesystem::exists("histograms.csv")) {
+                csvPath = "histograms.csv";
+            }
+        } else if (csvPath == "full_features_3" || csvPath == "full_features_3.csv") {
+            if (std::filesystem::exists("full_featuress_3.csv")) {
+                csvPath = "full_featuress_3.csv";
+            }
+        } else if (csvPath == "full_featuress_3" && std::filesystem::exists("full_featuress_3.csv")) {
+            csvPath = "full_featuress_3.csv";
+        }
+    }
+
     FeatureDatabase db = parseFeatureCSV(csvPath);
 
-    if (db.classNames.empty()) {
-        std::cout << "\nNo class data found in CSV. Checking for simple column CSV...\n";
-        CSVData legacyData = readCSV(csvPath);
-        if (legacyData.headers.empty()) {
-            std::cout << "Error: Could not read valid data from " << csvPath << "\n";
-            return;
-        }
-
-        std::vector<std::string> validColumns;
-        for (const auto& header : legacyData.headers) {
-            if (!legacyData.columns[header].empty() && header != "Shape id") {
-                validColumns.push_back(header);
-            }
-        }
-
-        std::cout << "\nAvailable features/columns:\n";
-        std::cout << "  0. [EXPORT ALL]\n";
-        for (size_t i = 0; i < validColumns.size(); ++i) {
-            std::cout << "  " << (i + 1) << ". " << validColumns[i] 
-                      << " (" << legacyData.columns[validColumns[i]].size() << " values)\n";
-        }
-
-        std::cout << "\nChoose an option (0 - " << validColumns.size() << "): ";
-        int choice;
-        std::cin >> choice;
-
-        std::cout << "Normalize Count values? (1 = Yes, 0 = No): ";
-        int normChoiceCount;
-        std::cin >> normChoiceCount;
-        bool normalizeCount = (normChoiceCount == 1);
-
-        std::cout << "Normalize data values? (1 = Yes, 0 = No): ";
-        int normChoiceData;
-        std::cin >> normChoiceData;
-        bool normalizeData = (normChoiceData == 1);
-        
-        std::cout << "Bin amount (default 20): ";
-        int bins;
-        std::cin >> bins;
-        if (bins <= 0) bins = 20;
-
-        if (choice == 0) {
-            std::cout << "Exporting all histograms...\n";
-            for (const auto& col : validColumns) {
-                std::string outFile = "images/hist_" + sanitizeName(col) + ".png";
-                exportHistogram(legacyData.columns[col], outFile, col, bins, normalizeCount, normalizeData);
-            }
-            std::cout << "Done! All histograms saved as PNG in images/ folder.\n";
-        } else if (choice > 0 && choice <= static_cast<int>(validColumns.size())) {
-            std::string col = validColumns[choice - 1];
-            std::string outFile = "images/hist_" + sanitizeName(col) + ".png";
-            exportHistogram(legacyData.columns[col], outFile, col, bins, normalizeCount, normalizeData);
-        }
+    if (db.allShapes.empty()) {
+        std::cout << "Error: Could not read valid data from " << csvPath << "\n";
         return;
     }
 
+    std::string fileStem = std::filesystem::path(csvPath).stem().string();
+
+    // If file has no class column (e.g. histograms.csv, full_features_1.csv or full_features_2.csv)
+    if (!db.hasClasses) {
+        std::string refClassPath = "";
+        if (std::filesystem::exists("full_featuress_3.csv")) {
+            refClassPath = "full_featuress_3.csv";
+        } else if (std::filesystem::exists("full_features_3.csv")) {
+            refClassPath = "full_features_3.csv";
+        }
+
+        std::cout << "\nLoaded " << csvPath << " with " << db.allShapes.size() 
+                  << " shapes and " << db.elementaryFeatureNames.size() << " features (no 'Class' column in this file).\n";
+
+        int exportMode = 1;
+        if (!refClassPath.empty()) {
+            std::cout << "\nSelect export mode:\n";
+            std::cout << "  1. Global dataset histograms (plot each feature distribution across all shapes)\n";
+            std::cout << "  2. Group by class (attach class labels from " << refClassPath << ")\n";
+            std::cout << "Choose option (1 or 2, default 1): ";
+            std::cin >> exportMode;
+            if (exportMode == 2) {
+                if (attachClassesFromReference(db, refClassPath)) {
+                    std::cout << "Successfully mapped " << db.classNames.size() << " classes from " << refClassPath << ".\n";
+                } else {
+                    std::cout << "Could not map classes from " << refClassPath << ". Proceeding with global mode.\n";
+                    exportMode = 1;
+                }
+            }
+        }
+
+        // Mode 1: Global feature histograms
+        if (!db.hasClasses) {
+            std::cout << "\n--- SELECT FEATURE ---\n";
+            std::cout << "Available features/columns:\n";
+            std::cout << "  0. [EXPORT ALL FEATURES]\n";
+            for (size_t i = 0; i < db.elementaryFeatureNames.size(); ++i) {
+                std::cout << "  " << (i + 1) << ". " << db.elementaryFeatureNames[i] << "\n";
+            }
+
+            std::cout << "\nChoose an option (0 - " << db.elementaryFeatureNames.size() << "): ";
+            int choice = 0;
+            std::cin >> choice;
+
+            std::vector<std::string> chosenFeatures;
+            if (choice == 0) {
+                chosenFeatures = db.elementaryFeatureNames;
+            } else if (choice > 0 && choice <= static_cast<int>(db.elementaryFeatureNames.size())) {
+                chosenFeatures.push_back(db.elementaryFeatureNames[choice - 1]);
+            } else {
+                std::cout << "Invalid choice.\n";
+                return;
+            }
+
+            std::cout << "\n[Bar Chart Options]\n";
+            std::cout << "Normalize Count values? (1 = Yes, 0 = No, default 1): ";
+            int normChoiceCount = 1;
+            std::cin >> normChoiceCount;
+            bool normalizeCount = (normChoiceCount == 1);
+
+            std::cout << "Normalize data values to [0, 1]? (1 = Yes, 0 = No, default 0): ";
+            int normChoiceData = 0;
+            std::cin >> normChoiceData;
+            bool normalizeData = (normChoiceData == 1);
+            
+            std::cout << "Number of bins (default 20): ";
+            int bins = 20;
+            std::cin >> bins;
+            if (bins <= 0) bins = 20;
+
+            std::cout << "\nExporting histograms to images/ folder...\n";
+            int exportedCount = 0;
+            for (const auto& featName : chosenFeatures) {
+                std::vector<double> vals;
+                vals.reserve(db.allShapes.size());
+                for (const auto& s : db.allShapes) {
+                    auto it = s.elementary.find(featName);
+                    if (it != s.elementary.end()) {
+                        vals.push_back(it->second);
+                    }
+                }
+
+                std::string outFile = "images/hist_" + sanitizeName(fileStem) + "_" + sanitizeName(featName) + ".png";
+                std::string title = featName;
+                if (exportHistogram(vals, outFile, title, bins, normalizeCount, normalizeData)) {
+                    exportedCount++;
+                }
+            }
+
+            std::cout << "\nDone! Successfully exported " << exportedCount << " chart(s) to images/ directory.\n";
+            return;
+        }
+    }
+
+    // Class-based export flow (for full_featuress_3.csv or when grouped by class)
     int totalShapes = 0;
     for (const auto& c : db.classNames) {
         totalShapes += static_cast<int>(db.classes[c].size());
@@ -773,7 +923,8 @@ void runHistogramMode() {
             const std::string& featName = feat.first;
             bool isHist = feat.second;
 
-            std::string outFile = "images/hist_" + sanitizeName(clsName) + "_" + sanitizeName(featName) + ".png";
+            std::string prefix = (fileStem == "full_featuress_3" || fileStem == "full_features_3") ? "" : (sanitizeName(fileStem) + "_");
+            std::string outFile = "images/hist_" + prefix + sanitizeName(clsName) + "_" + sanitizeName(featName) + ".png";
 
             if (isHist) {
                 if (exportClassHistogramLinePlot(clsName, featName, shapes, outFile)) {
@@ -781,6 +932,7 @@ void runHistogramMode() {
                 }
             } else {
                 std::vector<double> vals;
+                vals.reserve(shapes.size());
                 for (const auto& s : shapes) {
                     auto it = s.elementary.find(featName);
                     if (it != s.elementary.end()) {
