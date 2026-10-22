@@ -16,6 +16,8 @@
 #include "Historgam.h"
 #include "Features.h"
 #include "QuickSort.h"
+#include "FeatureNormStand.h"
+#include "Matching.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/pca.hpp>
@@ -1150,6 +1152,7 @@ int main()
     std::cout << "2. Feature extraction mode\n";
     std::cout << "3. Histogram export mode\n";
     std::cout << "4. Outlier mode \n";
+    std::cout << "5. Query mode \n";
     
     std::cin >> application_mode;
 
@@ -1191,6 +1194,8 @@ int main()
 
         // Feature extraction for all meshes
         std::vector<std::vector<double>> elem_desc = featureExtraction(normalized_meshes);
+        
+        promptNormOrStandard(elem_desc);
 
         // Prompt to save feature vectors to CSV
         promptSaveFeatures(normalized_meshes, elem_desc);
@@ -1223,6 +1228,28 @@ int main()
         renderObjects(outliers);
     }
 
+	else if (application_mode == 5)
+	{
+		fs::path featuresFile = "full_features_ns.csv";
+        std::vector<std::string> labels;
+		std::vector<std::vector<double>> features = readFeatures(featuresFile, labels);
+
+		fs::path path = promptPathOrSelect();
+
+        Parser p;
+		Mesh queryMesh = p.parseOFF(path.string());
+
+        resampleMesh(queryMesh);
+		normalizeMesh(queryMesh);
+		precomputeMesh(queryMesh);
+		renderObject(path);
+		
+        auto featureVector = featureExtract(queryMesh);
+        promptNormOrStandard(featureVector);
+
+
+	}
+	
     return 0;
 }
 

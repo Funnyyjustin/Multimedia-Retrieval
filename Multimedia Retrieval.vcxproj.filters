@@ -27,6 +27,15 @@
     <ClCompile Include="resampling.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Features.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="pbPlot\pbPlots.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="pbPlot\supportLib.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="parseobj.h">
@@ -50,11 +59,29 @@
     <ClInclude Include="Historgam.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="histogram.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="resampling.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Features.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MeshSampler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="pbPlot\pbPlots.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="pbPlot\supportLib.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="QuickSort.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FeatureNormStand.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Matching.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
