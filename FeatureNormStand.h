@@ -20,9 +20,13 @@ void normalizeFeatures(std::vector<std::vector<double>> &features)
 
 		}
 
+		double diff = maxVal - minVal;
 		for (int row = 0; row < features.size(); row++)
 		{
-			features[row][col] = (features[row][col] - minVal) / (maxVal - minVal);
+			if (diff > 1e-9)
+				features[row][col] = (features[row][col] - minVal) / (maxVal - minVal);
+			else
+				features[row][col] = 0.0;
 		}
 
 		file << minVal << ";" << maxVal << "\n";
@@ -210,11 +214,13 @@ std::vector<std::vector<double>> readFeatures(fs::path filePath, std::vector<std
 		std::getline(ss, word, ';'); // Read label
 		labels.push_back(word);
 
+		std::vector<double> row;
 		while (std::getline(ss, word, ';'))
 		{
 			if (!word.empty())
-				features.back().push_back(std::stod(word));
+				row.push_back(std::stod(word));
 		}
+		features.push_back(row);
 	}
 
 	return features;

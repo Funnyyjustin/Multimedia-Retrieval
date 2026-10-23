@@ -1140,6 +1140,34 @@ std::vector<std::vector<float>> getDataDeviations()
     return data;
 }
 
+// TODO: REMOVE THIS ON END PRODUCT
+void debugSelfMatch(size_t r,
+    const std::vector<std::vector<double>>& db,
+    const std::vector<double>& rawQuery,   // before normalization
+    const std::vector<double>& normQuery,  // after normalization
+    const NormalizationData& nd)
+{
+    std::cout << "sizes: query " << normQuery.size() << ", db row " << db[r].size()
+        << ", min " << nd.minValues.size() << ", max " << nd.maxValues.size() << "\n";
+
+    double lo = *std::min_element(normQuery.begin(), normQuery.end());
+    double hi = *std::max_element(normQuery.begin(), normQuery.end());
+    std::cout << "normalized query range: [" << lo << ", " << hi << "] (expect about [0,1])\n";
+
+    std::vector<std::pair<double, size_t>> diffs;
+    for (size_t j = 0; j < normQuery.size(); j++)
+        diffs.push_back({ std::abs(normQuery[j] - db[r][j]), j });
+    std::sort(diffs.rbegin(), diffs.rend());
+
+    for (int k = 0; k < 10 && k < (int)diffs.size(); k++)
+    {
+        size_t j = diffs[k].second;
+        std::cout << "col " << j << ": raw " << rawQuery[j] << "  normQ " << normQuery[j]
+            << "  db " << db[r][j] << "  min " << nd.minValues[j]
+            << "  max " << nd.maxValues[j] << "\n";
+    }
+}
+
 // Main functions
 
 int main()
@@ -1230,7 +1258,7 @@ int main()
 
 	else if (application_mode == 5)
 	{
-		fs::path featuresFile = "full_features_ns.csv";
+		fs::path featuresFile = "full_features_stand.csv";
         std::vector<std::string> labels;
 		std::vector<std::vector<double>> features = readFeatures(featuresFile, labels);
 
@@ -1245,16 +1273,29 @@ int main()
 		renderObject(path);
 		
         auto queryFeatures = featureExtract(queryMesh);
+        auto temp = queryFeatures;
         promptNormOrStandard(queryFeatures);
 
-        auto distances = makeDistanceVector(features, queryFeatures);
+        //debugSelfMatch(1, features, temp, queryFeatures, readNormalizationData("normalization_data.csv"));
 
-        quicksort(distances, 1, 0, distances.size());
+
+        std::vector<std::vector<float>> distances = makeDistanceVector(features, queryFeatures);
+
+        // TODO: REMOVE THIS ON END PRODUCT
+        std::sort(distances.begin(), distances.end(),
+            [](const auto& a, const auto& b) { return a[1] < b[1]; });
+        for (int k = 0; k < 5; k++)
+            std::cout << "row " << (size_t)distances[k][0] << "  dist " << distances[k][1]
+            << "  label " << labels[(size_t)distances[k][0]] << "\n";
+
+        //quicksort(distances, 1, 0, distances.size() - 1);
 
         std::cout << "Enter how many results bruh: " << std::endl;
 
         int k;
         std::cin >> k;
+
+        //std::reverse(distances.begin(), distances.end());
 
         std::vector<int> kbest;
 
