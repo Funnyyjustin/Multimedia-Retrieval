@@ -1244,10 +1244,26 @@ int main()
 		precomputeMesh(queryMesh);
 		renderObject(path);
 		
-        auto featureVector = featureExtract(queryMesh);
-        promptNormOrStandard(featureVector);
+        auto queryFeatures = featureExtract(queryMesh);
+        promptNormOrStandard(queryFeatures);
 
+        auto distances = makeDistanceVector(features, queryFeatures);
 
+        quicksort(distances, 1, 0, distances.size());
+
+        std::cout << "Enter how many results bruh: " << std::endl;
+
+        int k;
+        std::cin >> k;
+
+        std::vector<int> kbest;
+
+        for (int i = 0; i < k; i++)
+        {
+            kbest.push_back(distances[i][0]);
+        }
+
+        renderObjects(kbest);
 	}
 	
     return 0;

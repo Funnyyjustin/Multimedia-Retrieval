@@ -23,3 +23,28 @@ fs::path promptPathOrSelect()
 	}
 }
 
+// Distance functions
+
+float euclideanDistance(std::vector<double> feature, std::vector<double> query)
+{
+	int p = 2;
+	double sum = 0;
+	for (int i = 0; i < feature.size(); i++)
+	{
+		sum += pow(abs(feature[i] - query[i]), p);
+	}
+
+	return pow(sum, 1 / p);
+}
+
+std::vector<std::vector<float>> makeDistanceVector(std::vector<std::vector<double>> features, std::vector<double> query)
+{
+	std::vector<std::vector<float>> distances;
+	for (float i = 0; i < features.size(); i++)
+	{
+		std::vector<float> elem = { i, euclideanDistance(features[i], query) };
+		distances.push_back(elem);
+	}
+
+	return distances;
+}
