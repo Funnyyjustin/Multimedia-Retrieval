@@ -19,6 +19,7 @@ void normalizeFeatures(std::vector<std::vector<double>> &features)
 				minVal = features[row][col];
 
 		}
+		//std::cout << "MinValue: " << minVal << " MaxValue: " << maxVal << std::endl;
 
 		double diff = maxVal - minVal;
 		for (int row = 0; row < features.size(); row++)
@@ -149,9 +150,16 @@ void normalizeWithData(std::vector<double>& features, const NormalizationData& d
 	for (size_t i = 0; i < features.size(); ++i)
 	{
 		if (data.maxValues[i] - data.minValues[i] > 1e-9) // Avoid division by zero
+		{
+			//std::cout << "MinValue: " << data.minValues[i] << " MaxValue: " << data.maxValues[i] << std::endl;
 			features[i] = (features[i] - data.minValues[i]) / (data.maxValues[i] - data.minValues[i]);
+		}
 		else
+		{
+			//std::cout << "MinValue: " << data.minValues[i] << " MaxValue: " << data.maxValues[i] << std::endl;
 			features[i] = 0.0; // If max and min are the same, set to zero
+		}
+			
 	}
 }
 
@@ -166,40 +174,23 @@ void standardizeWithData(std::vector<double>& features, const StandardizationDat
 	}
 }
 
-void promptNormOrStandard(std::vector<double>& queryFeatures)
+struct FeatureData
 {
-	std::cout << "Type 1 to match with normalized features, 2 to match with standardized features: ";
-	int choice;
-	std::cin >> choice;
-
-	if (choice == 1)
-	{
-		NormalizationData normData = readNormalizationData("normalization_data.csv");
-		normalizeWithData(queryFeatures, normData);
-	}
-	else if (choice == 2)
-	{
-		StandardizationData stdData = readStandardizationData("standardization_data.csv");
-		standardizeWithData(queryFeatures, stdData);
-	}
-	else
-	{
-		std::cout << "Invalid input.\n";
-		promptNormOrStandard(queryFeatures);
-	}
-}
-
-std::vector<std::vector<double>> readFeatures(fs::path filePath, std::vector<std::string> &labels)
-{
-	labels.clear();
+	std::vector<std::string> labels;
 	std::vector<std::vector<double>> features;
+};
+
+FeatureData readFeatures(fs::path filePath)
+{
+	std::vector<std::vector<double>> features;
+	std::vector<std::string> labels;
 
 	std::ifstream file(filePath);
-	
+
 	if (!file.is_open())
 	{
 		std::cerr << "Error: Could not open file " << filePath << std::endl;
-		return features;
+		return {};
 	}
 
 	std::string line;
@@ -223,6 +214,33 @@ std::vector<std::vector<double>> readFeatures(fs::path filePath, std::vector<std
 		features.push_back(row);
 	}
 
-	return features;
+
+	return FeatureData{ labels, features };
 }
+
+FeatureData promptNormOrStandFeatures(std::vector<double>& queryFeatures)
+{
+	std::cout << "Type 1 to match with normalized features, 2 to match with standardized features: ";
+	int choice;
+	std::cin >> choice;
+
+	if (choice == 1)
+	{
+		NormalizationData normData = readNormalizationData("normalization_data.csv");
+		normalizeWithData(queryFeatures, normData);
+		return readFeatures("full_features_norm.csv");
+	}
+	else if (choice == 2)
+	{
+		StandardizationData stdData = readStandardizationData("standardization_data.csv");
+		standardizeWithData(queryFeatures, stdData);
+		return readFeatures("full_features_stand.csv");
+	}
+	else
+	{
+		std::cout << "Invalid input.\n";
+		promptNormOrStandFeatures(queryFeatures);
+	}
+}
+
 

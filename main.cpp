@@ -73,7 +73,6 @@ const char* fragmentShaderSource = "#version 330 core\n"
 "   FragColor = vec4(ambient + diffuse + specular, uColor.a);\n"
 "}\n\0";
 
-
 void renderObject(fs::path selectedFile)
 {
     Parser p;
@@ -263,17 +262,16 @@ void renderObject(fs::path selectedFile)
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(shaderProgram);\
+        glUseProgram(shaderProgram); \
 
-        // Get camera position
-        glm::vec3 cameraPos, camRight, camUp;
+            // Get camera position
+            glm::vec3 cameraPos, camRight, camUp;
         getCameraVectors(cameraPos, camRight, camUp);
 
         // Build matrices
         glm::mat4 model = glm::mat4(1.0f);
         glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
         glm::mat4 modelView = view * model;
-
 
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
@@ -287,7 +285,7 @@ void renderObject(fs::path selectedFile)
 
         // Draw models
         glBindVertexArray(VAO);
-        
+
         // Draw faces (with shading)
         if (showFace)
         {
@@ -327,6 +325,20 @@ void renderObject(fs::path selectedFile)
     glDeleteProgram(shaderProgram);
 
     glfwTerminate();
+}
+
+void promptRenderObject()
+{
+    fs::path selectedFile = selectModelFile("ObjectFiles");
+    if (selectedFile.empty())
+    {
+        std::cout << "Error: File is empty.\n";
+        promptRenderObject();
+    }
+
+    std::cout << "Loading file: " << selectedFile.string() << "\n";
+    renderObject(selectedFile);
+    promptRenderObject();
 }
 
 // Helper functions
@@ -1140,34 +1152,6 @@ std::vector<std::vector<float>> getDataDeviations()
     return data;
 }
 
-// TODO: REMOVE THIS ON END PRODUCT
-void debugSelfMatch(size_t r,
-    const std::vector<std::vector<double>>& db,
-    const std::vector<double>& rawQuery,   // before normalization
-    const std::vector<double>& normQuery,  // after normalization
-    const NormalizationData& nd)
-{
-    std::cout << "sizes: query " << normQuery.size() << ", db row " << db[r].size()
-        << ", min " << nd.minValues.size() << ", max " << nd.maxValues.size() << "\n";
-
-    double lo = *std::min_element(normQuery.begin(), normQuery.end());
-    double hi = *std::max_element(normQuery.begin(), normQuery.end());
-    std::cout << "normalized query range: [" << lo << ", " << hi << "] (expect about [0,1])\n";
-
-    std::vector<std::pair<double, size_t>> diffs;
-    for (size_t j = 0; j < normQuery.size(); j++)
-        diffs.push_back({ std::abs(normQuery[j] - db[r][j]), j });
-    std::sort(diffs.rbegin(), diffs.rend());
-
-    for (int k = 0; k < 10 && k < (int)diffs.size(); k++)
-    {
-        size_t j = diffs[k].second;
-        std::cout << "col " << j << ": raw " << rawQuery[j] << "  normQ " << normQuery[j]
-            << "  db " << db[r][j] << "  min " << nd.minValues[j]
-            << "  max " << nd.maxValues[j] << "\n";
-    }
-}
-
 // Main functions
 
 int main()
@@ -1188,15 +1172,7 @@ int main()
     // Rendering mode
     if (application_mode == 1)
     {
-        fs::path selectedFile = selectModelFile("ObjectFiles");
-        if (selectedFile.empty())
-        {
-            std::cout << "Error: File is empty.\n";
-            return -1;
-        }
-
-        std::cout << "Loading file: " << selectedFile.string() << "\n";
-        renderObject(selectedFile);
+        promptRenderObject();
     }
 
     // Analyse mode
@@ -1214,11 +1190,11 @@ int main()
         // Precompute values of the meshes
         std::vector<Mesh> precomputated_meshes = resampled_meshes;
         precomputeMeshes(precomputated_meshes);
-        analyseDatabase(precomputated_meshes);
+        //analyseDatabase(precomputated_meshes);
 
         // Normalization --> remeshing, translation, (rotation), (flipping), scaling
         std::vector<Mesh> normalized_meshes = normalizeMeshes(precomputated_meshes);
-        analyseDatabase(normalized_meshes);
+        //analyseDatabase(normalized_meshes);
 
         // Feature extraction for all meshes
         std::vector<std::vector<double>> elem_desc = featureExtraction(normalized_meshes);
@@ -1258,10 +1234,6 @@ int main()
 
 	else if (application_mode == 5)
 	{
-		fs::path featuresFile = "full_features_stand.csv";
-        std::vector<std::string> labels;
-		std::vector<std::vector<double>> features = readFeatures(featuresFile, labels);
-
 		fs::path path = promptPathOrSelect();
 
         Parser p;
@@ -1274,29 +1246,19 @@ int main()
 		
         auto queryFeatures = featureExtract(queryMesh);
         auto temp = queryFeatures;
-        promptNormOrStandard(queryFeatures);
+        FeatureData featureData = promptNormOrStandFeatures(queryFeatures);
 
-        //debugSelfMatch(1, features, temp, queryFeatures, readNormalizationData("normalization_data.csv"));
+        std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures);
 
-
-        std::vector<std::vector<float>> distances = makeDistanceVector(features, queryFeatures);
-
-        // TODO: REMOVE THIS ON END PRODUCT
-        std::sort(distances.begin(), distances.end(),
-            [](const auto& a, const auto& b) { return a[1] < b[1]; });
+        quicksort(distances, 1, 0, distances.size() - 1);
         for (int k = 0; k < 5; k++)
             std::cout << "row " << (size_t)distances[k][0] << "  dist " << distances[k][1]
-            << "  label " << labels[(size_t)distances[k][0]] << "\n";
+            << "  label " << featureData.labels[(size_t)distances[k][0]] << "\n";
 
-        //quicksort(distances, 1, 0, distances.size() - 1);
-
-        std::cout << "Enter how many results bruh: " << std::endl;
+        std::cout << "Enter how many results: " << std::endl;
 
         int k;
         std::cin >> k;
-
-        //std::reverse(distances.begin(), distances.end());
-
         std::vector<int> kbest;
 
         for (int i = 0; i < k; i++)
