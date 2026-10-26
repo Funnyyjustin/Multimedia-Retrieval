@@ -18,28 +18,13 @@
 #include "QuickSort.h"
 #include "FeatureNormStand.h"
 #include "Matching.h"
-
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/pca.hpp>
 #include <glm/glm.hpp>
 
-namespace fs = std::filesystem;
-int application_mode;
+std::vector<std::string> paths;
 
-// Render functions
-
-const char* vertexShaderSource = "#version 330 core\n"
-"layout (location = 0) in vec3 aPos;\n"
-"uniform mat4 uMVP;\n"
-"uniform mat4 uModelView;\n"
-"out vec3 FragPosEye;\n"
-"void main()\n"
-"{\n"
-"   FragPosEye = vec3(uModelView * vec4(aPos, 1.0));\n"
-"   gl_Position = uMVP * vec4(aPos, 1.0);\n"
-"}\0";
-
-const char* fragmentShaderSource = "#version 330 core\n"
+const char* fragmentShaderSource = { "#version 330 core\n"
 "in vec3 FragPosEye;\n"
 "uniform vec4 uColor;\n"
 "uniform bool uUseLighting;\n"
@@ -71,7 +56,23 @@ const char* fragmentShaderSource = "#version 330 core\n"
 "   vec3 specular = vec3(0.2) * spec;\n"
 "\n"
 "   FragColor = vec4(ambient + diffuse + specular, uColor.a);\n"
-"}\n\0";
+"}\n\0" } ;
+
+const char* vertexShaderSource = { "#version 330 core\n"
+"layout (location = 0) in vec3 aPos;\n"
+"uniform mat4 uMVP;\n"
+"uniform mat4 uModelView;\n"
+"out vec3 FragPosEye;\n"
+"void main()\n"
+"{\n"
+"   FragPosEye = vec3(uModelView * vec4(aPos, 1.0));\n"
+"   gl_Position = uMVP * vec4(aPos, 1.0);\n"
+"}\0" } ;
+
+namespace fs = std::filesystem;
+int application_mode;
+
+// Render functions
 
 void renderObject(fs::path selectedFile)
 {
@@ -345,7 +346,7 @@ void promptRenderObject()
 
 void renderObject(int id)
 {
-    fs::path path = selectModelFile(id);
+    fs::path path = paths[id];
     renderObject(path);
 }
 
@@ -1156,6 +1157,9 @@ std::vector<std::vector<float>> getDataDeviations()
 
 int main()
 {
+    //makeidpathcsv();
+    paths = readPaths();
+
     omp_set_num_threads(omp_get_max_threads());
 
     std::cout << "Multimedia Retrieval tool\n";

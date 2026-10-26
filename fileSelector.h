@@ -9,6 +9,78 @@
 
 namespace fs = std::filesystem;
 
+void makeidpathcsv() 
+{
+    std::ofstream file("pathids.csv");
+
+    if (!file.is_open())
+        return;
+
+    file << "Paths;";
+
+    fs::path baseDir = "ObjectFiles";
+    if (!fs::exists(baseDir))
+    {
+        std::cerr << "Error: Map '" << baseDir.string() << "' does not exist.\n";
+        return;
+    }
+    else if (!fs::is_directory(baseDir))
+    {
+        std::cerr << "Error: Map '" << baseDir.string() << "' is not a directory.\n";
+        return;
+    }
+
+    // Get all subfolders
+    std::vector<fs::path> classes;
+    for (const auto& entry : fs::directory_iterator(baseDir))
+    {
+        if (entry.is_directory())
+        {
+            classes.push_back(entry.path());
+        }
+    }
+
+    // Sort alphabetically
+    std::sort(classes.begin(), classes.end());
+
+    for (int i = 0; i < classes.size(); i++)
+    {
+        fs::path path = classes[i];
+        for (const auto& entry : fs::directory_iterator(path))
+        {
+            if (entry.is_regular_file())
+            {
+                std::string ext = entry.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                if (ext == ".obj" || ext == ".off")
+                {
+                    file << entry.path() << ";";
+                }
+            }
+        }
+    }
+
+    file.close();
+}
+
+std::vector<std::string> readPaths()
+{
+    std::vector<std::string> paths;
+    std::ifstream file("pathids.csv");
+
+    if (!file.is_open())
+        return {};
+
+    std::string line;
+    std::getline(file, line);
+    while (std::getline(file, line))
+    {
+        paths.push_back(line);
+    }
+    file.close();
+    return paths;
+}
+
 inline fs::path selectModelFile(const fs::path& baseDir = "ObjectFiles")
 {
     if (!fs::exists(baseDir))
