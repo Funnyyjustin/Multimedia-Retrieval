@@ -72,291 +72,7 @@ const char* vertexShaderSource = { "#version 330 core\n"
 namespace fs = std::filesystem;
 int application_mode;
 
-// Render functions
-
-void renderObject(fs::path selectedFile)
-{
-    Parser p;
-    Mesh obj = p.parseOFF(selectedFile.string());
-    GLsizei vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
-    std::cout << "Number of vertices: " << obj.vertsSize() << std::endl;
-    std::cout << "Number of faces: " << obj.primsSize() << std::endl;
-
-    glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    // Create window
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Multimedia Retrieval", NULL, NULL);
-    glfwSetMouseButtonCallback(window, mouse_button_callback);
-    glfwSetCursorPosCallback(window, cursor_position_callback);
-    glfwSetScrollCallback(window, scroll_callback);
-    glfwSetKeyCallback(window, key_callback);
-
-    if (window == NULL)
-    {
-        std::cout << "Failed to create GLFW window" << std::endl;
-        glfwTerminate();
-        return;
-    }
-    glfwMakeContextCurrent(window);
-
-    // Initialise GLAD
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-    {
-        std::cout << "Failed to initialize GLAD" << std::endl;
-        return;
-    }
-
-    glViewport(0, 0, 800, 600);
-    glEnable(GL_DEPTH_TEST);
-
-    // Print controls to console
-    std::cout << "\n=== Controls ===\n";
-    std::cout << "  Left Mouse Drag  : Orbit camera\n";
-    std::cout << "  Right Mouse Drag : Pan camera\n";
-    std::cout << "  Scroll Wheel     : Zoom\n";
-    std::cout << "  W / A / S / D    : Move camera\n";
-    std::cout << "  1                : Toggle Edges\n";
-    std::cout << "  2                : Toggle Vertices\n";
-    std::cout << "  3                : Toggle Faces\n";
-    std::cout << "  L                : 1 Step Loop Subdivision (Upsample)\n";
-    std::cout << "  U                : 1 Step Simple Subdivision (Upsample)\n";
-    std::cout << "  K                : 1 Step Decimation (Downsample)\n";
-    std::cout << "  R                : Auto Resample (target 5k - 10k vertices)\n";
-    std::cout << "================\n\n";
-
-    // Load in mesh
-    std::vector<float> vertices = obj.trivertsgl;
-
-    // Compile and load shaders
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
-
-    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-
-    unsigned int shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    // VAO, VBO
-    unsigned int VAO, VBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-
-    glBindVertexArray(VAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-
-    // Data reading
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    // Show window
-    // Render loop
-    int mvpLoc = glGetUniformLocation(shaderProgram, "uMVP");
-    int modelViewLoc = glGetUniformLocation(shaderProgram, "uModelView");
-    int useLightingLoc = glGetUniformLocation(shaderProgram, "uUseLighting");
-    GLint colorLoc = glGetUniformLocation(shaderProgram, "uColor");
-
-    float lastFrameTime = 0.0f;
-
-    while (!glfwWindowShouldClose(window))
-    {
-        // Calculate delta time
-        float currentFrameTime = static_cast<float>(glfwGetTime());
-        float deltaTime = currentFrameTime - lastFrameTime;
-        lastFrameTime = currentFrameTime;
-
-        // Process camera input
-        processCameraKeyboard(window, deltaTime);
-
-        // Process resampling input
-        static bool lKeyPressed = false;
-        if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
-        {
-            if (!lKeyPressed)
-            {
-                lKeyPressed = true;
-                std::cout << "\n[Resample] Performing 1 step of Loop subdivision..." << std::endl;
-                upsampleMeshLoop(obj);
-                glBindBuffer(GL_ARRAY_BUFFER, VBO);
-                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
-                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
-                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
-            }
-        }
-        else if (glfwGetKey(window, GLFW_KEY_L) == GLFW_RELEASE)
-        {
-            lKeyPressed = false;
-        }
-
-        static bool uKeyPressed = false;
-        if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS)
-        {
-            if (!uKeyPressed)
-            {
-                uKeyPressed = true;
-                std::cout << "\n[Resample] Performing 1 step of Simple subdivision..." << std::endl;
-                upsampleMeshSimple(obj);
-                glBindBuffer(GL_ARRAY_BUFFER, VBO);
-                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
-                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
-                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
-            }
-        }
-        else if (glfwGetKey(window, GLFW_KEY_U) == GLFW_RELEASE)
-        {
-            uKeyPressed = false;
-        }
-
-        static bool kKeyPressed = false;
-        if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
-        {
-            if (!kKeyPressed)
-            {
-                kKeyPressed = true;
-                std::cout << "\n[Resample] Performing 1 step of Downsampling (Decimation)..." << std::endl;
-                downsampleMesh(obj);
-                glBindBuffer(GL_ARRAY_BUFFER, VBO);
-                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
-                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
-                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
-            }
-        }
-        else if (glfwGetKey(window, GLFW_KEY_K) == GLFW_RELEASE)
-        {
-            kKeyPressed = false;
-        }
-
-        static bool rKeyPressed = false;
-        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS)
-        {
-            if (!rKeyPressed)
-            {
-                rKeyPressed = true;
-                std::cout << "\n[Resample] Auto-resampling mesh towards 5k - 10k vertices..." << std::endl;
-                resampleMesh(obj);
-                glBindBuffer(GL_ARRAY_BUFFER, VBO);
-                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
-                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
-                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
-            }
-        }
-        else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_RELEASE)
-        {
-            rKeyPressed = false;
-        }
-
-        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        glUseProgram(shaderProgram); \
-
-            // Get camera position
-            glm::vec3 cameraPos, camRight, camUp;
-        getCameraVectors(cameraPos, camRight, camUp);
-
-        // Build matrices
-        glm::mat4 model = glm::mat4(1.0f);
-        glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
-        glm::mat4 modelView = view * model;
-
-        int width, height;
-        glfwGetFramebufferSize(window, &width, &height);
-        float aspect = (height > 0) ? (float)width / (float)height : 1.0f;
-        glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
-        glm::mat4 mvp = projection * view * model;
-
-        // Write to shader
-        glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
-        glUniformMatrix4fv(modelViewLoc, 1, GL_FALSE, glm::value_ptr(modelView));
-
-        // Draw models
-        glBindVertexArray(VAO);
-
-        // Draw faces (with shading)
-        if (showFace)
-        {
-            glUniform1i(useLightingLoc, 1);
-            glUniform4f(colorLoc, 1.0f, 0.5f, 0.2f, 1.0f);
-            glDrawArrays(GL_TRIANGLES, 0, vertexCount);
-        }
-
-        // Draw edges (unlit)
-        if (showEdge)
-        {
-            glUniform1i(useLightingLoc, 0);
-            glUniform4f(colorLoc, 0.2f, 0.1f, 0.05f, 1.0f);
-            glLineWidth(2.0f);
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            glDrawArrays(GL_TRIANGLES, 0, vertexCount);
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        }
-
-        // Draw nodes (unlit)
-        if (showNode)
-        {
-            glUniform1i(useLightingLoc, 0);
-            glUniform4f(colorLoc, 1.0f, 0.0f, 0.0f, 1.0f);
-            glPointSize(4.0f);
-            glDrawArrays(GL_POINTS, 0, vertexCount);
-        }
-
-
-        glfwSwapBuffers(window);
-        glfwPollEvents();
-    }
-
-    // Clean memory
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
-    glDeleteProgram(shaderProgram);
-
-    glfwTerminate();
-}
-
-void promptRenderObject()
-{
-    fs::path selectedFile = selectModelFile("ObjectFiles");
-    if (selectedFile.empty())
-    {
-        std::cout << "Error: File is empty.\n";
-        promptRenderObject();
-    }
-
-    std::cout << "Loading file: " << selectedFile.string() << "\n";
-    renderObject(selectedFile);
-    promptRenderObject();
-}
-
 // Helper functions
-
-void renderObject(int id)
-{
-    fs::path path = paths[id];
-    renderObject(path);
-}
-
-void renderObjects(std::vector<int> ids)
-{
-    for (int id : ids)
-    {
-        renderObject(id);
-    }
-}
 
 std::vector<int> flatten(std::vector<std::vector<int>>& vec)
 {
@@ -1153,11 +869,296 @@ std::vector<std::vector<float>> getDataDeviations()
     return data;
 }
 
+// Render functions
+
+void renderObject(fs::path selectedFile)
+{
+    Parser p;
+    Mesh obj = p.parseOFF(selectedFile.string());
+    normalizeMesh(obj);
+    GLsizei vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+    std::cout << "Number of vertices: " << obj.vertsSize() << std::endl;
+    std::cout << "Number of faces: " << obj.primsSize() << std::endl;
+
+    glfwInit();
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    // Create window
+    GLFWwindow* window = glfwCreateWindow(800, 600, "Multimedia Retrieval", NULL, NULL);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
+    glfwSetCursorPosCallback(window, cursor_position_callback);
+    glfwSetScrollCallback(window, scroll_callback);
+    glfwSetKeyCallback(window, key_callback);
+
+    if (window == NULL)
+    {
+        std::cout << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        return;
+    }
+    glfwMakeContextCurrent(window);
+
+    // Initialise GLAD
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    {
+        std::cout << "Failed to initialize GLAD" << std::endl;
+        return;
+    }
+
+    glViewport(0, 0, 800, 600);
+    glEnable(GL_DEPTH_TEST);
+
+    // Print controls to console
+    std::cout << "\n=== Controls ===\n";
+    std::cout << "  Left Mouse Drag  : Orbit camera\n";
+    std::cout << "  Right Mouse Drag : Pan camera\n";
+    std::cout << "  Scroll Wheel     : Zoom\n";
+    std::cout << "  W / A / S / D    : Move camera\n";
+    std::cout << "  1                : Toggle Edges\n";
+    std::cout << "  2                : Toggle Vertices\n";
+    std::cout << "  3                : Toggle Faces\n";
+    std::cout << "  L                : 1 Step Loop Subdivision (Upsample)\n";
+    std::cout << "  U                : 1 Step Simple Subdivision (Upsample)\n";
+    std::cout << "  K                : 1 Step Decimation (Downsample)\n";
+    std::cout << "  R                : Auto Resample (target 5k - 10k vertices)\n";
+    std::cout << "================\n\n";
+
+    // Load in mesh
+    std::vector<float> vertices = obj.trivertsgl;
+
+    // Compile and load shaders
+    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShader);
+
+    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShader);
+
+    unsigned int shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    // VAO, VBO
+    unsigned int VAO, VBO;
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+
+    glBindVertexArray(VAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+
+    // Data reading
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    // Show window
+    // Render loop
+    int mvpLoc = glGetUniformLocation(shaderProgram, "uMVP");
+    int modelViewLoc = glGetUniformLocation(shaderProgram, "uModelView");
+    int useLightingLoc = glGetUniformLocation(shaderProgram, "uUseLighting");
+    GLint colorLoc = glGetUniformLocation(shaderProgram, "uColor");
+
+    float lastFrameTime = 0.0f;
+
+    while (!glfwWindowShouldClose(window))
+    {
+        // Calculate delta time
+        float currentFrameTime = static_cast<float>(glfwGetTime());
+        float deltaTime = currentFrameTime - lastFrameTime;
+        lastFrameTime = currentFrameTime;
+
+        // Process camera input
+        processCameraKeyboard(window, deltaTime);
+
+        // Process resampling input
+        static bool lKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
+        {
+            if (!lKeyPressed)
+            {
+                lKeyPressed = true;
+                std::cout << "\n[Resample] Performing 1 step of Loop subdivision..." << std::endl;
+                upsampleMeshLoop(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_L) == GLFW_RELEASE)
+        {
+            lKeyPressed = false;
+        }
+
+        static bool uKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS)
+        {
+            if (!uKeyPressed)
+            {
+                uKeyPressed = true;
+                std::cout << "\n[Resample] Performing 1 step of Simple subdivision..." << std::endl;
+                upsampleMeshSimple(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_U) == GLFW_RELEASE)
+        {
+            uKeyPressed = false;
+        }
+
+        static bool kKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
+        {
+            if (!kKeyPressed)
+            {
+                kKeyPressed = true;
+                std::cout << "\n[Resample] Performing 1 step of Downsampling (Decimation)..." << std::endl;
+                downsampleMesh(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_K) == GLFW_RELEASE)
+        {
+            kKeyPressed = false;
+        }
+
+        static bool rKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS)
+        {
+            if (!rKeyPressed)
+            {
+                rKeyPressed = true;
+                std::cout << "\n[Resample] Auto-resampling mesh towards 5k - 10k vertices..." << std::endl;
+                resampleMesh(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_RELEASE)
+        {
+            rKeyPressed = false;
+        }
+
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        glUseProgram(shaderProgram); \
+
+            // Get camera position
+            glm::vec3 cameraPos, camRight, camUp;
+        getCameraVectors(cameraPos, camRight, camUp);
+
+        // Build matrices
+        glm::mat4 model = glm::mat4(1.0f);
+        glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 modelView = view * model;
+
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
+        float aspect = (height > 0) ? (float)width / (float)height : 1.0f;
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+        glm::mat4 mvp = projection * view * model;
+
+        // Write to shader
+        glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
+        glUniformMatrix4fv(modelViewLoc, 1, GL_FALSE, glm::value_ptr(modelView));
+
+        // Draw models
+        glBindVertexArray(VAO);
+
+        // Draw faces (with shading)
+        if (showFace)
+        {
+            glUniform1i(useLightingLoc, 1);
+            glUniform4f(colorLoc, 1.0f, 0.5f, 0.2f, 1.0f);
+            glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+        }
+
+        // Draw edges (unlit)
+        if (showEdge)
+        {
+            glUniform1i(useLightingLoc, 0);
+            glUniform4f(colorLoc, 0.2f, 0.1f, 0.05f, 1.0f);
+            glLineWidth(2.0f);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        }
+
+        // Draw nodes (unlit)
+        if (showNode)
+        {
+            glUniform1i(useLightingLoc, 0);
+            glUniform4f(colorLoc, 1.0f, 0.0f, 0.0f, 1.0f);
+            glPointSize(4.0f);
+            glDrawArrays(GL_POINTS, 0, vertexCount);
+        }
+
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    // Clean memory
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
+    glDeleteProgram(shaderProgram);
+
+    glfwTerminate();
+}
+
+void promptRenderObject()
+{
+    fs::path selectedFile = selectModelFile("ObjectFiles");
+    if (selectedFile.empty())
+    {
+        std::cout << "Error: File is empty.\n";
+        promptRenderObject();
+    }
+
+    std::cout << "Loading file: " << selectedFile.string() << "\n";
+    renderObject(selectedFile);
+    promptRenderObject();
+}
+
+void renderObject(int id)
+{
+    fs::path path = paths[id];
+    renderObject(path);
+}
+
+void renderObjects(std::vector<int> ids)
+{
+    for (int id : ids)
+    {
+        renderObject(id);
+    }
+}
+
 // Main functions
 
 int main()
 {
-    //makeidpathcsv();
+    makeidpathcsv();
     paths = readPaths();
 
     omp_set_num_threads(omp_get_max_threads());

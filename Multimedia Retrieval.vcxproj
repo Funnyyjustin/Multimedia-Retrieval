@@ -149,6 +149,7 @@
     <ClInclude Include="Features.h" />
     <ClInclude Include="fileSelector.h" />
     <ClInclude Include="Historgam.h" />
+    <ClInclude Include="matchheur.h" />
     <ClInclude Include="Matching.h" />
     <ClInclude Include="MeshSampler.h" />
     <ClInclude Include="object.h" />

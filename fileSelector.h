@@ -16,7 +16,7 @@ void makeidpathcsv()
     if (!file.is_open())
         return;
 
-    file << "Paths;";
+    file << "Paths\n";
 
     fs::path baseDir = "ObjectFiles";
     if (!fs::exists(baseDir))
@@ -54,7 +54,7 @@ void makeidpathcsv()
                 std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
                 if (ext == ".obj" || ext == ".off")
                 {
-                    file << entry.path() << ";";
+                    file << entry.path() << "\n";
                 }
             }
         }
@@ -76,6 +76,12 @@ std::vector<std::string> readPaths()
     while (std::getline(file, line))
     {
         paths.push_back(line);
+        /*
+        std::stringstream ss(line);
+        std::string word;
+        while(std::getline(ss, word, ';'))
+            paths.push_back(word);
+            */
     }
     file.close();
     return paths;
