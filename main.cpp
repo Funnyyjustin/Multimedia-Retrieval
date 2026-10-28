@@ -18,6 +18,8 @@
 #include "QuickSort.h"
 #include "FeatureNormStand.h"
 #include "Matching.h"
+#include "matchheur.h"
+
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/pca.hpp>
 #include <glm/glm.hpp>
