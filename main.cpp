@@ -564,7 +564,7 @@ void calculateAABB(Mesh& input)
 
 void translateBarycenter(Mesh& input)
 {
-    std::cout << "Translating..\n";
+    //std::cout << "Translating..\n";
 
     if (input.vertices.empty()) return;
 
@@ -594,7 +594,7 @@ void translateBarycenter(Mesh& input)
 
 void scaleUniformly(Mesh& input)
 {
-    std::cout << "Scaling..\n";
+    //std::cout << "Scaling..\n";
 
     if (input.vertices.empty()) return;
 
@@ -631,7 +631,7 @@ void scaleUniformly(Mesh& input)
 
 void alignAxes(Mesh& input)
 {
-    std::cout << "Rotating..\n";
+    //std::cout << "Rotating..\n";
 
     // Step 1: Compute Covariance Matrix (3x3)
     // Can be calculated by first putting all vertices in a Nx3 matrix V (so each row of the matrix is a xyz of a vertex in the shape)
@@ -722,7 +722,7 @@ int sign(float i)
 
 void flipShape(Mesh& input)
 {
-    std::cout << "Flipping..\n";
+    //std::cout << "Flipping..\n";
 
     // The idea is to have the sides of the shapes that have more mass always be on the same side of some axis
     // We can do this by first calculating the centers of all triangles
@@ -1172,6 +1172,7 @@ int main()
     std::cout << "3. Histogram export mode\n";
     std::cout << "4. Outlier mode \n";
     std::cout << "5. Query mode \n";
+    std::cout << "6. Score current matching \n";
     
     std::cin >> application_mode;
 
@@ -1275,6 +1276,15 @@ int main()
 
         renderObjects(kbest);
 	}
+
+    else if (application_mode == 6)
+    {
+        std::cout << "Enter how many matches scoring should check: ";
+        int k = 0;
+        std::cin >> k;
+
+        scoreMatching(paths, resampleMesh, normalizeMesh, precomputeMesh, k);
+    }
 	
     return 0;
 }

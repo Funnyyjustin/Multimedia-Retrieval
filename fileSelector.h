@@ -54,7 +54,7 @@ void makeidpathcsv()
                 std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
                 if (ext == ".obj" || ext == ".off")
                 {
-                    file << entry.path() << "\n";
+                    file << entry.path().string() << "\n";
                 }
             }
         }

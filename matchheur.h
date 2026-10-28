@@ -3,49 +3,80 @@
 #include <string>
 
 
-void scoreMatching(std::vector<std::string>& paths, int k, int nos)
+void scoreMatching(
+	std::vector<std::string>& paths, 
+	std::function<void (Mesh&, int, int)> resample, 
+	std::function<void(Mesh&)> normalize, 
+	std::function<void(Mesh&)> precompute,
+	int k)
 {
-	std::vector<std::vector<std::string>> allmatches;
-	int total = 0;
+	//std::vector<std::vector<std::string>> allmatches;
+	
 
-	for (int i; i < paths.size(); i++)
+	NormalizationData normData = readNormalizationData("normalization_data.csv");
+	FeatureData featDataNorm = readFeatures("full_features_norm.csv");
+
+	StandardizationData stdData = readStandardizationData("standardization_data.csv");
+	FeatureData featDataStand = readFeatures("full_features_stand.csv");
+
+	std::cout << "Calculating score with normalisation";
+	double total = 0;
+	double points = 0;
+	for (int i = 0; i < paths.size(); i++)
 	{
+		std::cout << ".";
 		Parser p;
 		Mesh m = p.parseOFF(paths[i]);
 
-		resampleMesh(m);
-		normalizeMesh(m);
-		precomputeMesh(m);
+		resample(m, 5000, 10000);
+		normalize(m);
+		precompute(m);
 
 		auto feature = featureExtract(m);
 
-		if (nos == 0)
+		normalizeWithData(feature, normData);
+
+		auto distances = makeDistanceVector(featDataNorm.features, feature);
+		quicksort(distances, 1, 0, distances.size() - 1);
+
+		for (int j = 0; j < k; j++)
 		{
-			NormalizationData normData = readNormalizationData("normalization_data.csv");
-			normalizeWithData(feature, normData);
-			FeatureData featData = readFeatures("full_features_norm.csv");
-
-			auto distances = makeDistanceVector(featData.features, feature);
-			quicksort(distances, 1, 0, distances.size() - 1);
-
-			for (int j; j < k; j++)
-			{
-				std::string matchLabel = featData.labels[distances[j][0]];
-				allmatches[i].push_back(matchLabel);
-			}
-				
-		}
-		else
-		{
-			StandardizationData stdData = readStandardizationData("standardization_data.csv");
-			standardizeWithData(feature, stdData);
-			FeatureData featData = readFeatures("full_features_stand.csv");
-
-			auto distances = makeDistanceVector(featData.features, feature);
-			quicksort(distances, 1, 0, distances.size() - 1);
-
-			for (int j; j < k; j++)
-				allmatches[i].push_back(featData.labels[distances[j][0]]);
-		}		
+			total++;
+			std::string matchLabel = featDataNorm.labels[distances[j][0]];
+			if (matchLabel == featDataNorm.labels[i])
+				points++;
+		}	
 	}
+	std::cout << "\nScore for matching with normalisation (0-100): " << points / total * 100.0 << std::endl;
+
+	std::cout << "Calculating score with standardization";
+	total = 0;
+	points = 0;
+	for (int i = 0; i < paths.size(); i++)
+	{
+		std::cout << ".";
+		Parser p;
+		Mesh m = p.parseOFF(paths[i]);
+
+		resample(m, 5000, 10000);
+		normalize(m);
+		precompute(m);
+
+		auto feature = featureExtract(m);
+
+		standardizeWithData(feature, stdData);
+
+
+		auto distances = makeDistanceVector(featDataStand.features, feature);
+		quicksort(distances, 1, 0, distances.size() - 1);
+
+		for (int j = 0; j < k; j++)
+		{
+			total++;
+			std::string matchLabel = featDataStand.labels[distances[j][0]];
+			if (matchLabel == featDataStand.labels[i])
+				points++;
+		}
+	}
+	std::cout << "\nScore for matching with standardisation (0-100): " << points / total * 100.0 << std::endl;
 }
