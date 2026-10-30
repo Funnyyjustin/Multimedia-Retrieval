@@ -1202,11 +1202,10 @@ int main()
 
         // Normalization --> remeshing, translation, (rotation), (flipping), scaling
         std::vector<Mesh> normalized_meshes = normalizeMeshes(precomputated_meshes);
-        //analyseDatabase(normalized_meshes);
 
         // Feature extraction for all meshes
         std::vector<std::vector<double>> elem_desc = featureExtraction(normalized_meshes);
-        
+        promptSaveFeatures(normalized_meshes, elem_desc);
         promptNormOrStandard(elem_desc);
 
         // Prompt to save feature vectors to CSV
@@ -1248,8 +1247,8 @@ int main()
 		Mesh queryMesh = p.parseOFF(path.string());
 
         resampleMesh(queryMesh);
+        precomputeMesh(queryMesh);
 		normalizeMesh(queryMesh);
-		precomputeMesh(queryMesh);
 		renderObject(path);
 		
         auto queryFeatures = featureExtract(queryMesh);

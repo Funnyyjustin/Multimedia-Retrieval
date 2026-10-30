@@ -27,11 +27,11 @@ fs::path promptPathOrSelect()
 
 float euclideanDistance(std::vector<double> feature, std::vector<double> query)
 {
-	double p = 2;
+	double p = 3;
 	double sum = 0;
 	for (int i = 0; i < feature.size(); i++)
 	{
-		sum += pow(abs(feature[i] - query[i]), p);
+		sum += pow(fabs(feature[i] - query[i]), p);
 	}
 
 	return pow(sum, 1.0 / p);
@@ -46,5 +46,17 @@ std::vector<std::vector<float>> makeDistanceVector(const std::vector<std::vector
 		distances.push_back(elem);
 	}
 
+	return distances;
+}
+
+std::vector<std::vector<float>> makeDistanceVector(
+	const std::vector<std::vector<double>>& features,
+	const std::vector<double>& query,
+	const FeatureWeights& w)
+{
+	std::vector<std::vector<float>> distances;
+	distances.reserve(features.size());
+	for (size_t i = 0; i < features.size(); i++)
+		distances.push_back({ (float)i, (float)weightedDistance(features[i], query, w) });
 	return distances;
 }

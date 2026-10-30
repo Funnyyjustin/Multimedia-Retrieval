@@ -2,6 +2,41 @@
 #include <vector>
 #include <string>
 
+void saveWeights(const FeatureWeights& weights)
+{
+	std::ofstream file("weights.csv");
+	if (!file.is_open())
+	{
+		std::cerr << "Error: Could not open file " << "weights.csv" << " for writing.\n";
+		return;
+	}
+	for (size_t g = 0; g < NUM_GROUPS; g++)
+	{
+		file << weights[g];
+		if (g < NUM_GROUPS - 1)
+			file << ";";
+	}
+	file << "\n";
+	file.close();
+}
+
+std::array<double, NUM_GROUPS> readWeights()
+{
+	std::array<double, NUM_GROUPS> weights;
+	std::ifstream file("weights.csv");
+	if (!file.is_open())
+	{
+		std::cerr << "Error: Could not open file " << "weights.csv" << " for reading.\n";
+	}
+	for (size_t g = 0; g < NUM_GROUPS; g++)
+	{
+		file >> weights[g];
+		if (g < NUM_GROUPS - 1)
+			file.ignore();
+	}
+	file.close();
+	return weights;
+}
 
 void scoreMatching(
 	std::vector<std::string>& paths, 
@@ -17,8 +52,14 @@ void scoreMatching(
 	FeatureData featDataNorm = readFeatures("full_features_norm.csv");
 
 	StandardizationData stdData = readStandardizationData("standardization_data.csv");
-	FeatureData featDataStand = readFeatures("full_features_stand.csv");
+	FeatureData featDataStand = readFeatures("full_feats_stand.csv");
 
+	//FeatureWeights weights = computeWeightsFromDatabase(featDataStand.features);
+	//saveWeights(weights);
+	FeatureWeights weights = readWeights(); // Read the saved weights
+	for (size_t g = 0; g < NUM_GROUPS; g++) std::cout << "w[" << g << "]=" << weights[g] << "\n";
+
+	/*
 	std::cout << "Calculating score with normalisation";
 	double total = 0;
 	double points = 0;
@@ -48,10 +89,11 @@ void scoreMatching(
 		}	
 	}
 	std::cout << "\nScore for matching with normalisation (0-100): " << points / total * 100.0 << std::endl;
+	*/
 
 	std::cout << "Calculating score with standardization";
-	total = 0;
-	points = 0;
+	double total = 0;
+	double points = 0;
 	for (int i = 0; i < paths.size(); i++)
 	{
 		std::cout << ".";
@@ -59,15 +101,16 @@ void scoreMatching(
 		Mesh m = p.parseOFF(paths[i]);
 
 		resample(m, 5000, 10000);
-		normalize(m);
 		precompute(m);
+		normalize(m);
 
 		auto feature = featureExtract(m);
 
 		standardizeWithData(feature, stdData);
+		normalizeHistogram(feature);
 
-
-		auto distances = makeDistanceVector(featDataStand.features, feature);
+		auto distances = makeDistanceVector(featDataStand.features, feature, weights);
+		//auto distances = makeDistanceVector(featDataStand.features, feature);
 		quicksort(distances, 1, 0, distances.size() - 1);
 
 		for (int j = 0; j < k; j++)
@@ -80,3 +123,7 @@ void scoreMatching(
 	}
 	std::cout << "\nScore for matching with standardisation (0-100): " << points / total * 100.0 << std::endl;
 }
+
+
+
+

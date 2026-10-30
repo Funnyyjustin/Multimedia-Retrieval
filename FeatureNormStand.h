@@ -1,10 +1,84 @@
 #pragma once
 #include <vector>
+#include <array>
+
+
+const int numSingleFeatures = 6;
+const int numHistograms = 5;
+const int numHistogramBins = 20;
+const int numFeatures = numSingleFeatures + numHistograms * numHistogramBins;
+
+constexpr size_t NUM_GROUPS = numSingleFeatures + numHistograms;   // 6 + 5 = 11
+using FeatureWeights = std::array<double, NUM_GROUPS>;
+
+inline void normalizeWeights(FeatureWeights& w)
+{
+	double sum = 0.0;
+	for (double x : w) sum += x;
+	if (sum > 1e-9) for (double& x : w) x /= sum;
+}
+
+inline std::array<double, NUM_GROUPS> groupDistances(
+	const std::vector<double>& a, const std::vector<double>& b)
+{
+	std::array<double, NUM_GROUPS> d{};
+	for (int i = 0; i < numSingleFeatures; i++)
+		d[i] = std::fabs(a[i] - b[i]);
+
+	for (int h = 0; h < numHistograms; h++)
+	{
+		int start = numSingleFeatures + h * numHistogramBins;
+		double sq = 0.0;
+		for (int i = start; i < start + numHistogramBins; i++)
+			sq += (a[i] - b[i]) * (a[i] - b[i]);
+		d[numSingleFeatures + h] = std::sqrt(sq);
+	}
+	return d;
+}
+
+inline double weightedDistance(const std::vector<double>& a,
+	const std::vector<double>& b,
+	const FeatureWeights& w)
+{
+	auto d = groupDistances(a, b);
+	double total = 0.0;
+	for (size_t g = 0; g < NUM_GROUPS; g++)
+		total += w[g] * d[g];
+	return total;
+}
+
+// Weight each group inversely to its mean distance over the database
+inline FeatureWeights computeWeightsFromDatabase(
+	const std::vector<std::vector<double>>& features)
+{
+	std::array<double, NUM_GROUPS> meanDist{};
+	size_t pairs = 0;
+	for (size_t i = 0; i < features.size(); i++)
+		for (size_t j = i + 1; j < features.size(); j++)
+		{
+			auto d = groupDistances(features[i], features[j]);
+			for (size_t g = 0; g < NUM_GROUPS; g++) meanDist[g] += d[g];
+			pairs++;
+		}
+
+	FeatureWeights w{};
+	for (size_t g = 0; g < NUM_GROUPS; g++)
+	{
+		double m = pairs ? meanDist[g] / pairs : 0.0;
+		w[g] = (m > 1e-9) ? 1.0 / m : 0.0;
+	}
+	normalizeWeights(w);
+	return w;
+}
 
 void normalizeFeatures(std::vector<std::vector<double>> &features)
 {
 	std::ofstream file("normalization_data.csv");
 	file << "Min value;Max value\n";
+
+	int fSize = features.size();
+
+
 
 	for (int col = 0; col < features[0].size(); col++)
 	{
@@ -36,23 +110,30 @@ void normalizeFeatures(std::vector<std::vector<double>> &features)
 	file.close();
 }
 
-void standardizeFeatures(std::vector<std::vector<double>>& features)
+void standardizeSingleFeatures(std::vector<std::vector<double>>& features)
 {
 	std::ofstream file("standardization_data.csv");
 	file << "Mean;Standard Deviation\n";
 
-	for (int col = 0; col < features[0].size(); col++)
+	int fSize = features.size();
+
+	for (int col = 0; col < numSingleFeatures; col++)
 	{
 		double sum = 0.0;
-		int n = features.size();
-		for (int row = 0; row < n; row++)
+		for (int row = 0; row < fSize; row++)
 		{
 			sum += features[row][col];
 		}
-		double mean = sum / n;
-		double variance = (pow(sum, 2) / n) - (mean * mean);
-		double stddev = sqrt(variance);
-		for (int row = 0; row < n; row++)
+		double mean = sum / fSize;
+
+		double sqrtSum = 0.0;
+		for (int row = 0; row < fSize; row++)
+		{
+			sqrtSum += pow(features[row][col] - mean, 2);
+		}
+		double stddev = sqrt(sqrtSum / fSize);
+
+		for (int row = 0; row < fSize; row++)
 		{
 			if (stddev > 1e-9) // Avoid division by zero
 				features[row][col] = (features[row][col] - mean) / stddev;
@@ -61,7 +142,52 @@ void standardizeFeatures(std::vector<std::vector<double>>& features)
 		}
 		file << mean << ";" << stddev << "\n";
 	}
+
 	file.close();
+}
+
+void normalizeHistogram(std::vector<double>& row)
+{
+	for (int i = 0; i < numHistograms; i++)
+	{
+		int startCol = numSingleFeatures + i * numHistogramBins;
+		int endCol = startCol + numHistogramBins;
+
+		double sum = 0.0;
+		for (int col = startCol; col < endCol; col++)
+		{
+			sum += row[col];
+		}
+		if (sum > 1e-9) // Avoid division by zero
+		{
+			for (int col = startCol; col < endCol; col++)
+			{
+				row[col] /= sum;
+			}
+		}
+		else
+		{
+			for (int col = startCol; col < endCol; col++)
+			{
+				row[col] = 0.0; // If sum is zero, set all to zero
+			}
+		}
+	}
+}
+
+// written by copilot, need to check if it works correctly
+void normalizeHistograms(std::vector<std::vector<double>>& features)
+{
+	for (auto& row : features)
+	{
+		normalizeHistogram(row);
+	}
+}
+
+void standardizeFeatures(std::vector<std::vector<double>>& features)
+{
+	standardizeSingleFeatures(features);
+	normalizeHistograms(features); // Normalizing histograms is equivalent to standardizing them
 }
 
 void promptNormOrStandard(std::vector<std::vector<double>>& features)
@@ -165,7 +291,8 @@ void normalizeWithData(std::vector<double>& features, const NormalizationData& d
 
 void standardizeWithData(std::vector<double>& features, const StandardizationData& data)
 {
-	for (size_t i = 0; i < features.size(); ++i)
+	int c = std::min(data.means.size(), features.size());
+	for (size_t i = 0; i < c; ++i)
 	{
 		if (data.stddevs[i] > 1e-9) // Avoid division by zero
 			features[i] = (features[i] - data.means[i]) / data.stddevs[i];
@@ -234,12 +361,13 @@ FeatureData promptNormOrStandFeatures(std::vector<double>& queryFeatures)
 	{
 		StandardizationData stdData = readStandardizationData("standardization_data.csv");
 		standardizeWithData(queryFeatures, stdData);
-		return readFeatures("full_features_stand.csv");
+		normalizeHistogram(queryFeatures);
+		return readFeatures("full_feats_stand.csv");
 	}
 	else
 	{
 		std::cout << "Invalid input.\n";
-		promptNormOrStandFeatures(queryFeatures);
+		return promptNormOrStandFeatures(queryFeatures);
 	}
 }
 

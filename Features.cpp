@@ -92,7 +92,8 @@ double calculateConvexity(Mesh& mesh)
     // 2. write the mesh vertices to the text files for qhull
     {
         std::ofstream fo(inFileName);
-        if (!fo.is_open()) return 0.0;
+        if (!fo.is_open()) 
+            return 0.0;
 
         fo << "3\n";
         fo << mesh.vertices.size() << "\n";
