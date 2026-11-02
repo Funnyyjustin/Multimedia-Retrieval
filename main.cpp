@@ -386,7 +386,7 @@ void exportToCSV(const std::vector<Mesh>& meshes, const std::vector<int>& faces,
     if (!file.is_open())
         return;
 
-    file << "Shape id; Number of faces; Number of vertices; Face type; Volume; Area; Barycentre X; Barycentre Y; Barycenter Z; Scale X; Scale Y; Scale Z; EV1 x; EV1 y; EV1 z; EV2 x; EV2 y; EV2 z; EV3 x; EV3 y; EV3 z\n";
+    file << "Shape id; Number of faces; Number of vertices; Face type; Volume; Area; Barycentre X; Barycentre Y; Barycenter Z; Scale X; Scale Y; Scale Z; EV1 x; EV1 y; EV1 z; EV2 x; EV2 y; EV2 z; EV3 x; EV3 y; EV3 z; sign x; sign y; sign z\n";
 
     size_t maxSize = std::max({ faces.size(), verts.size(), types.size() });
 
@@ -466,6 +466,13 @@ void exportToCSV(const std::vector<Mesh>& meshes, const std::vector<int>& faces,
         file << meshes[i].ev3.e[1];
         file << ";";
         file << meshes[i].ev3.e[2];
+        file << ";";
+
+        file << meshes[i].sx;
+        file << ";";
+        file << meshes[i].sy;
+        file << ";";
+        file << meshes[i].sz;
         file << ";";
 
         file << "\n";
@@ -659,7 +666,7 @@ void analyseDatabase(const std::vector<Mesh>& meshes)
     }
 
     // Print summary to console cleanly
-    for (int i = 0; i < n; ++i)
+    /*for (int i = 0; i < n; ++i)
     {
         const Mesh& m = meshes[i];
         std::string type = (types[i] == 0) ? "Quads only" : (types[i] == 1 ? "Tris only" : "Mix of tris and quads");
@@ -671,7 +678,7 @@ void analyseDatabase(const std::vector<Mesh>& meshes)
         std::cout << "  min: " << m.minPoint.e[0] << " " << m.minPoint.e[1] << " " << m.minPoint.e[2] << "\n";
         std::cout << "  max: " << m.maxPoint.e[0] << " " << m.maxPoint.e[1] << " " << m.maxPoint.e[2] << "\n";
         std::cout << "\n";
-    }
+    }*/
 
     std::cout << "Export to CSV file? y/n\n";
     char c;
@@ -979,12 +986,41 @@ void alignAxes(Mesh& input)
         c = Point3(pRot.x, pRot.y, pRot.z);
     }
 
-    // Save eigenvectors
-    input.ev1 = Vec3(e1.x, e1.y, e1.z);
-    input.ev2 = Vec3(e2.x, e2.y, e2.z);
-    input.ev3 = Vec3(e3.x, e3.y, e3.z);
-    input.eigenvalues = Vec3(evals[0], evals[1], evals[2]);
+    // After rotation, we calculate the new eigenvectors
+    std::vector<glm::dvec3> V_new;
+    V_new.reserve(input.vertices.size());
+    for (const auto& v : input.vertices)
+    {
+        V_new.emplace_back(v.x(), v.y(), v.z());
+    }
 
+    glm::dvec3 C_new(0.0, 0.0, 0.0);
+
+    glm::dmat3 covMat_new = glm::computeCovarianceMatrix(V_new.data(), V_new.size(), C_new);
+
+    glm::dvec3 evals_new(1.0, 1.0, 1.0);
+    glm::dmat3 evecs_new;
+    int count_new = glm::findEigenvaluesSymReal(covMat_new, evals_new, evecs_new);
+    if (count_new != 3 || std::isnan(evals_new[0]) || std::isnan(evals_new[1]) || std::isnan(evals_new[2])) {
+        input.eigenvalues = Vec3(1.0, 1.0, 1.0);
+        return;
+    }
+
+    // Sort from largest to smallest (evlas[0] >= evals[1] >= evals[2])
+    glm::sortEigenvalues(evals_new, evecs_new);
+
+    glm::dvec3 e1_new = glm::normalize(evecs_new[0]);
+    glm::dvec3 e2_new = glm::normalize(evecs_new[1]);
+    glm::dvec3 e3_new = glm::normalize(evecs_new[2]);
+
+    if (glm::dot(glm::cross(e1_new, e2_new), e3_new) < 0.0) {
+        e3_new = -e3_new;
+    }
+
+    input.ev1 = Vec3(e1_new.x, e1_new.y, e1_new.z);
+    input.ev2 = Vec3(e2_new.x, e2_new.y, e2_new.z);
+    input.ev3 = Vec3(e3_new.x, e3_new.y, e3_new.z);
+    input.eigenvalues = Vec3(evals_new[0], evals_new[1], evals_new[2]);
     
     // Update old AABB into new one
     calculateAABB(input);
@@ -1045,6 +1081,31 @@ void flipShape(Mesh& input)
         auto& c = f.centroid;
         c = Point3(sign(fx) * c.x(), sign(fy) * c.y(), sign(fz) * c.z());
     }
+
+    // Calculate new signs for each axis
+    fx = 0; fy = 0; fz = 0;
+
+    for (auto face : input.faces)
+    {
+        float centersum[3]{ 0, 0, 0 };
+        for (int a : face.v)
+        {
+            centersum[0] += input.vertices[a].x();
+            centersum[1] += input.vertices[a].y();
+            centersum[2] += input.vertices[a].z();
+        }
+
+        for (int i = 0; i < 3; i++) centersum[i] /= face.v.size();
+
+        // Then, for x, y and z, we calculate fi = sum_t sign(C t,i)(C t,i)^2
+        fx += sign(centersum[0]) * pow(centersum[0], 2);
+        fy += sign(centersum[1]) * pow(centersum[1], 2);
+        fz += sign(centersum[2]) * pow(centersum[2], 2);
+    }
+
+    input.sx = sign(fx);
+    input.sy = sign(fy);
+    input.sz = sign(fz);
 
     // Update old AABB into new one
     calculateAABB(input);
