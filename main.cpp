@@ -608,7 +608,7 @@ std::vector<Mesh> parseDatabase(fs::path path)
 
     std::cout << "Parsing " << total << " files in parallel...\n";
 
-    #pragma omp parallel for schedule(dynamic)
+    //#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         Parser p;
@@ -618,7 +618,7 @@ std::vector<Mesh> parseDatabase(fs::path path)
         int done = ++parsedCount;
         if (done % 100 == 0 || done == total)
         {
-            #pragma omp critical
+            //#pragma omp critical
             std::cout << "[Parsing] Completed " << done << " / " << total << " files.\n";
         }
     }
@@ -697,14 +697,14 @@ void analyseDatabase(const std::vector<Mesh>& meshes)
 
 // Resample functions
 
-std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes, int minVert = minVertCount, int maxVert = maxVertCount)
+void resampleMeshes(std::vector<Mesh>& meshes, int minVert = minVertCount, int maxVert = maxVertCount)
 {
     int total = static_cast<int>(meshes.size());
     std::cout << "Resampling " << total << " meshes in parallel...\n";
 
     std::atomic<int> completed{0};
 
-    #pragma omp parallel for schedule(dynamic)
+    //#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         resampleMesh(meshes[i], minVert, maxVert);
@@ -712,13 +712,12 @@ std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes, int minVert = minVert
         int done = ++completed;
         if (done % 20 == 0 || done == total)
         {
-            #pragma omp critical
+            //#pragma omp critical
             std::cout << "[Resampling] Completed " << done << " / " << total << " meshes (" << (done * 100 / total) << "%)\n";
         }
     }
 
     std::cout << "Finished resampling meshes.\n";
-    return meshes;
 }
 
 // Precomputation functions
@@ -816,7 +815,7 @@ void precomputeMeshes(std::vector<Mesh>& meshes)
     int total = static_cast<int>(meshes.size());
     std::cout << "Precomputing " << total << " meshes in parallel...\n";
 
-    #pragma omp parallel for schedule(dynamic)
+    //#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         precomputeMesh(meshes[i]);
@@ -1123,12 +1122,12 @@ void normalizeMesh(Mesh& input)
     scaleUniformly(input);
 }
 
-std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
+std::vector<Mesh> normalizeMeshes(std::vector<Mesh>& meshes)
 {
     int total = static_cast<int>(meshes.size());
     std::cout << "Normalizing " << total << " meshes in parallel...\n";
 
-    #pragma omp parallel for schedule(dynamic)
+    //#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         normalizeMesh(meshes[i]);
@@ -1241,29 +1240,28 @@ int main()
     {
         // Analyse initial database
         fs::path objectFiles = "ObjectFiles";
-        std::vector<Mesh> original_meshes = parseDatabase(objectFiles);
-        //analyseDatabase(original_meshes);
+        std::vector<Mesh> meshes = parseDatabase(objectFiles);
+        //analyseDatabase(meshes);
 
         // Resample meshes
-        std::vector<Mesh> resampled_meshes = resampleMeshes(original_meshes);
-        //analyseDatabase(resampled_meshes);
+        resampleMeshes(meshes);
+        //analyseDatabase(meshes);
 
         // Precompute values of the meshes
-        std::vector<Mesh> precomputated_meshes = resampled_meshes;
-        precomputeMeshes(precomputated_meshes);
-        //analyseDatabase(precomputated_meshes);
+        precomputeMeshes(meshes);
+        //analyseDatabase(meshes);
 
         // Normalization --> remeshing, translation, (rotation), (flipping), scaling
-        std::vector<Mesh> normalized_meshes = normalizeMeshes(precomputated_meshes);
-        //analyseDatabase(normalized_meshes);
+        normalizeMeshes(meshes);
+        //analyseDatabase(meshes);
 
         // Feature extraction for all meshes
-        std::vector<std::vector<double>> elem_desc = featureExtraction(normalized_meshes);
+        std::vector<std::vector<double>> elem_desc = featureExtraction(meshes);
         
         promptNormOrStandard(elem_desc);
 
         // Prompt to save feature vectors to CSV
-        promptSaveFeatures(normalized_meshes, elem_desc);
+        promptSaveFeatures(meshes, elem_desc);
     }
     
     //Histogram mode

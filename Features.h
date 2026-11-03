@@ -3,4 +3,4 @@
 #include "object.h"
 
 std::vector<double> featureExtract(Mesh& mesh);
-std::vector<std::vector<double>> featureExtraction(std::vector<Mesh> meshes);
+std::vector<std::vector<double>> featureExtraction(std::vector<Mesh>& meshes);

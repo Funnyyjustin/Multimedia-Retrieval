@@ -270,7 +270,7 @@ std::vector<double> featureExtract(Mesh& mesh)
     return vec; // Totaal 106 values
 }
 
-std::vector<std::vector<double>> featureExtraction(std::vector<Mesh> meshes)
+std::vector<std::vector<double>> featureExtraction(std::vector<Mesh>& meshes)
 {
     std::vector<std::vector<double>> vec;
 

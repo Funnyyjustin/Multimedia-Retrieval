@@ -113,6 +113,13 @@ public:
 		out.minPoint = Point3(minX, minY, minZ);
 		out.trisOnly = onlyTri;
 		out.quadsOnly = onlyQuad;
+
+		std::vector<Primitive>().swap(prims);
+		std::vector<float>().swap(trivertsgl);
+		std::vector<Point3>().swap(vertices);
+		std::vector<Point3>().swap(normals);
+		std::vector<Face>().swap(faces);
+
 		return out;
 	}
 };

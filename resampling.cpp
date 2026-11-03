@@ -227,7 +227,7 @@ void upsampleMeshLoop(Mesh& input)
     // Update mesh with new geometry
     input.vertices = std::move(newPositions);
     input.faces = std::move(newFaces);
-    input.updateGLBuffers();
+    //input.updateGLBuffers();
 }
 
 void downsampleMesh(Mesh& input, int targetVertices)
