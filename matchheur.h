@@ -4,10 +4,10 @@
 
 void saveWeights(const FeatureWeights& weights)
 {
-	std::ofstream file("weights.csv");
+	std::ofstream file(weightsFilePath);
 	if (!file.is_open())
 	{
-		std::cerr << "Error: Could not open file " << "weights.csv" << " for writing.\n";
+		std::cerr << "Error: Could not open file " << weightsFilePath.string() << " for writing.\n";
 		return;
 	}
 	for (size_t g = 0; g < NUM_GROUPS; g++)
@@ -23,10 +23,10 @@ void saveWeights(const FeatureWeights& weights)
 std::array<double, NUM_GROUPS> readWeights()
 {
 	std::array<double, NUM_GROUPS> weights;
-	std::ifstream file("weights.csv");
+	std::ifstream file(weightsFilePath);
 	if (!file.is_open())
 	{
-		std::cerr << "Error: Could not open file " << "weights.csv" << " for reading.\n";
+		std::cerr << "Error: Could not open file " << weightsFilePath.string() << " for reading.\n";
 	}
 	for (size_t g = 0; g < NUM_GROUPS; g++)
 	{
@@ -45,18 +45,15 @@ void scoreMatching(
 	std::function<void(Mesh&)> precompute,
 	int k)
 {
-	//std::vector<std::vector<std::string>> allmatches;
-	
+	NormalizationData normData = readNormalizationData(normalizationDataFilePath.string());
+	FeatureData featDataNorm = readFeatures(fullFeaturesNormFilePath.string());
 
-	NormalizationData normData = readNormalizationData("normalization_data.csv");
-	FeatureData featDataNorm = readFeatures("full_features_norm.csv");
+	StandardizationData stdData = readStandardizationData(standardizationDataFilePath.string());
+	FeatureData featDataStand = readFeatures(fullFeaturesStandFilePath.string());
 
-	StandardizationData stdData = readStandardizationData("standardization_data.csv");
-	FeatureData featDataStand = readFeatures("full_feats_stand.csv");
-
-	//FeatureWeights weights = computeWeightsFromDatabase(featDataStand.features);
-	//saveWeights(weights);
-	FeatureWeights weights = readWeights(); // Read the saved weights
+	FeatureWeights weights = computeWeightsFromDatabase(featDataStand.features);
+	saveWeights(weights);
+	//FeatureWeights weights = readWeights(); // Read the saved weights
 	for (size_t g = 0; g < NUM_GROUPS; g++) std::cout << "w[" << g << "]=" << weights[g] << "\n";
 
 	/*
@@ -110,7 +107,7 @@ void scoreMatching(
 		normalizeHistogram(feature);
 
 		auto distances = makeDistanceVector(featDataStand.features, feature, weights);
-		//auto distances = makeDistanceVector(featDataStand.features, feature);
+
 		quicksort(distances, 1, 0, distances.size() - 1);
 
 		for (int j = 0; j < k; j++)
@@ -123,7 +120,3 @@ void scoreMatching(
 	}
 	std::cout << "\nScore for matching with standardisation (0-100): " << points / total * 100.0 << std::endl;
 }
-
-
-
-

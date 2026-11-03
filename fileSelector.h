@@ -6,12 +6,13 @@
 #include <string>
 #include <algorithm>
 #include <limits>
+#include "globals.h"
 
 namespace fs = std::filesystem;
 
 void makeidpathcsv() 
 {
-    std::ofstream file("pathids.csv");
+    std::ofstream file(pathsFilePath);
 
     if (!file.is_open())
         return;
@@ -66,7 +67,7 @@ void makeidpathcsv()
 std::vector<std::string> readPaths()
 {
     std::vector<std::string> paths;
-    std::ifstream file("pathids.csv");
+    std::ifstream file(pathsFilePath);
 
     if (!file.is_open())
         return {};
@@ -76,12 +77,6 @@ std::vector<std::string> readPaths()
     while (std::getline(file, line))
     {
         paths.push_back(line);
-        /*
-        std::stringstream ss(line);
-        std::string word;
-        while(std::getline(ss, word, ';'))
-            paths.push_back(word);
-            */
     }
     file.close();
     return paths;

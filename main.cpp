@@ -19,6 +19,7 @@
 #include "FeatureNormStand.h"
 #include "Matching.h"
 #include "matchheur.h"
+#include "globals.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/pca.hpp>
@@ -59,7 +60,6 @@ const char* fragmentShaderSource = { "#version 330 core\n"
 "\n"
 "   FragColor = vec4(ambient + diffuse + specular, uColor.a);\n"
 "}\n\0" } ;
-
 const char* vertexShaderSource = { "#version 330 core\n"
 "layout (location = 0) in vec3 aPos;\n"
 "uniform mat4 uMVP;\n"
@@ -281,7 +281,7 @@ std::vector<Mesh> parseDatabase(fs::path path)
     std::cout << "Type in the max number of classes to parse (0-69):\n";
     std::cin >> class_limit;
 
-    std::cout << "Type in the max number of shapes per class to parse (0-100):\n";
+    std::cout << "Type in the max number of shapes per class to parse (0-143):\n";
     std::cin >> shape_limit;
 
     struct Task {
@@ -798,7 +798,7 @@ std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
 
 std::vector<std::vector<float>> getDataDeviations()
 {
-    std::ifstream file("histograms.csv");
+    std::ifstream file(histogramsFilePath);
     std::vector<std::vector<float>> data;
     float sumFaces = 0;
     float sumVerts = 0;
@@ -926,6 +926,8 @@ void renderObject(fs::path selectedFile)
     std::cout << "  K                : 1 Step Decimation (Downsample)\n";
     std::cout << "  R                : Auto Resample (target 5k - 10k vertices)\n";
     std::cout << "================\n\n";
+
+	std::cout << "File: " << selectedFile.string() << std::endl;
 
     // Load in mesh
     std::vector<float> vertices = obj.trivertsgl;
@@ -1172,7 +1174,6 @@ int main()
     std::cout << "3. Histogram export mode\n";
     std::cout << "4. Outlier mode \n";
     std::cout << "5. Query mode \n";
-    std::cout << "6. Score current matching \n";
     
     std::cin >> application_mode;
 
@@ -1255,17 +1256,18 @@ int main()
         auto temp = queryFeatures;
         FeatureData featureData = promptNormOrStandFeatures(queryFeatures);
 
-        std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures);
+        std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures, readWeights());
 
         quicksort(distances, 1, 0, distances.size() - 1);
-        for (int k = 0; k < 5; k++)
-            std::cout << "row " << (size_t)distances[k][0] << "  dist " << distances[k][1]
-            << "  label " << featureData.labels[(size_t)distances[k][0]] << "\n";
 
         std::cout << "Enter how many results: " << std::endl;
-
         int k;
         std::cin >> k;
+
+        for (int i = 0; i < k; i++)
+            std::cout << "file " << paths[distances[i][0]] << "  dist " << distances[i][1]
+            << "  label " << featureData.labels[(size_t)distances[i][0]] << "\n";
+
         std::vector<int> kbest;
 
         for (int i = 0; i < k; i++)
@@ -1275,15 +1277,6 @@ int main()
 
         renderObjects(kbest);
 	}
-
-    else if (application_mode == 6)
-    {
-        std::cout << "Enter how many matches scoring should check: ";
-        int k = 0;
-        std::cin >> k;
-
-        scoreMatching(paths, resampleMesh, normalizeMesh, precomputeMesh, k);
-    }
 	
     return 0;
 }

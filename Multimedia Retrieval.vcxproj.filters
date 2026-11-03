@@ -83,5 +83,11 @@
     <ClInclude Include="Matching.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="matchheur.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="globals.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

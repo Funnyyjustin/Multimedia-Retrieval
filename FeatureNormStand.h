@@ -1,84 +1,23 @@
 #pragma once
 #include <vector>
 #include <array>
-
+#include "globals.h"
 
 const int numSingleFeatures = 6;
 const int numHistograms = 5;
 const int numHistogramBins = 20;
 const int numFeatures = numSingleFeatures + numHistograms * numHistogramBins;
-
-constexpr size_t NUM_GROUPS = numSingleFeatures + numHistograms;   // 6 + 5 = 11
+constexpr size_t NUM_SINGLE_GROUPS = 1;
+constexpr size_t NUM_GROUPS = NUM_SINGLE_GROUPS + numHistograms;   // 1 + 5 = 6
+constexpr double SINGLE_MASS_SHIFT = 3.0;
 using FeatureWeights = std::array<double, NUM_GROUPS>;
-
-inline void normalizeWeights(FeatureWeights& w)
-{
-	double sum = 0.0;
-	for (double x : w) sum += x;
-	if (sum > 1e-9) for (double& x : w) x /= sum;
-}
-
-inline std::array<double, NUM_GROUPS> groupDistances(
-	const std::vector<double>& a, const std::vector<double>& b)
-{
-	std::array<double, NUM_GROUPS> d{};
-	for (int i = 0; i < numSingleFeatures; i++)
-		d[i] = std::fabs(a[i] - b[i]);
-
-	for (int h = 0; h < numHistograms; h++)
-	{
-		int start = numSingleFeatures + h * numHistogramBins;
-		double sq = 0.0;
-		for (int i = start; i < start + numHistogramBins; i++)
-			sq += (a[i] - b[i]) * (a[i] - b[i]);
-		d[numSingleFeatures + h] = std::sqrt(sq);
-	}
-	return d;
-}
-
-inline double weightedDistance(const std::vector<double>& a,
-	const std::vector<double>& b,
-	const FeatureWeights& w)
-{
-	auto d = groupDistances(a, b);
-	double total = 0.0;
-	for (size_t g = 0; g < NUM_GROUPS; g++)
-		total += w[g] * d[g];
-	return total;
-}
-
-// Weight each group inversely to its mean distance over the database
-inline FeatureWeights computeWeightsFromDatabase(
-	const std::vector<std::vector<double>>& features)
-{
-	std::array<double, NUM_GROUPS> meanDist{};
-	size_t pairs = 0;
-	for (size_t i = 0; i < features.size(); i++)
-		for (size_t j = i + 1; j < features.size(); j++)
-		{
-			auto d = groupDistances(features[i], features[j]);
-			for (size_t g = 0; g < NUM_GROUPS; g++) meanDist[g] += d[g];
-			pairs++;
-		}
-
-	FeatureWeights w{};
-	for (size_t g = 0; g < NUM_GROUPS; g++)
-	{
-		double m = pairs ? meanDist[g] / pairs : 0.0;
-		w[g] = (m > 1e-9) ? 1.0 / m : 0.0;
-	}
-	normalizeWeights(w);
-	return w;
-}
 
 void normalizeFeatures(std::vector<std::vector<double>> &features)
 {
-	std::ofstream file("normalization_data.csv");
+	std::ofstream file(normalizationDataFilePath);
 	file << "Min value;Max value\n";
 
 	int fSize = features.size();
-
-
 
 	for (int col = 0; col < features[0].size(); col++)
 	{
@@ -112,7 +51,7 @@ void normalizeFeatures(std::vector<std::vector<double>> &features)
 
 void standardizeSingleFeatures(std::vector<std::vector<double>>& features)
 {
-	std::ofstream file("standardization_data.csv");
+	std::ofstream file(standardizationDataFilePath);
 	file << "Mean;Standard Deviation\n";
 
 	int fSize = features.size();
@@ -301,74 +240,6 @@ void standardizeWithData(std::vector<double>& features, const StandardizationDat
 	}
 }
 
-struct FeatureData
-{
-	std::vector<std::string> labels;
-	std::vector<std::vector<double>> features;
-};
 
-FeatureData readFeatures(fs::path filePath)
-{
-	std::vector<std::vector<double>> features;
-	std::vector<std::string> labels;
-
-	std::ifstream file(filePath);
-
-	if (!file.is_open())
-	{
-		std::cerr << "Error: Could not open file " << filePath << std::endl;
-		return {};
-	}
-
-	std::string line;
-	std::getline(file, line); // Skip header line
-
-	while (std::getline(file, line))
-	{
-		std::stringstream ss(line);
-		std::string word;
-
-		std::getline(ss, word, ';'); // Read ID
-		std::getline(ss, word, ';'); // Read label
-		labels.push_back(word);
-
-		std::vector<double> row;
-		while (std::getline(ss, word, ';'))
-		{
-			if (!word.empty())
-				row.push_back(std::stod(word));
-		}
-		features.push_back(row);
-	}
-
-
-	return FeatureData{ labels, features };
-}
-
-FeatureData promptNormOrStandFeatures(std::vector<double>& queryFeatures)
-{
-	std::cout << "Type 1 to match with normalized features, 2 to match with standardized features: ";
-	int choice;
-	std::cin >> choice;
-
-	if (choice == 1)
-	{
-		NormalizationData normData = readNormalizationData("normalization_data.csv");
-		normalizeWithData(queryFeatures, normData);
-		return readFeatures("full_features_norm.csv");
-	}
-	else if (choice == 2)
-	{
-		StandardizationData stdData = readStandardizationData("standardization_data.csv");
-		standardizeWithData(queryFeatures, stdData);
-		normalizeHistogram(queryFeatures);
-		return readFeatures("full_feats_stand.csv");
-	}
-	else
-	{
-		std::cout << "Invalid input.\n";
-		return promptNormOrStandFeatures(queryFeatures);
-	}
-}
 
 
