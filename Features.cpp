@@ -270,15 +270,15 @@ std::vector<double> featureExtract(Mesh& mesh)
     return vec; // Totaal 106 values
 }
 
-std::vector<std::vector<double>> featureExtraction(std::vector<Mesh>& meshes)
+void featureExtraction(std::vector<Mesh>& meshes, std::vector<std::vector<double>>& elem_desc)
 {
-    std::vector<std::vector<double>> vec;
+    //std::vector<std::vector<double>> vec;
 
     for (std::size_t i = 0, e = meshes.size(); i != e; ++i)
     {
         std::cout << "extracting features for mesh: " << i << "/" << meshes.size() << std::endl;
-        vec.push_back(featureExtract(meshes[i]));
+        elem_desc.push_back(featureExtract(meshes[i]));
     }
 
-    return vec;
+    //return vec;
 }

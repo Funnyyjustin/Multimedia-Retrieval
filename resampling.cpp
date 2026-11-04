@@ -124,7 +124,7 @@ void upsampleMeshSimple(Mesh& input)
 
     input.vertices = std::move(new_vertices);
     input.faces = std::move(new_faces);
-    input.updateGLBuffers();
+    //input.updateGLBuffers();
 }
 
 void upsampleMeshLoop(Mesh& input)
@@ -407,7 +407,7 @@ void downsampleMesh(Mesh& input, int targetVertices)
 
     input.vertices = std::move(newVertices);
     input.faces = std::move(newFaces);
-    input.updateGLBuffers();
+    //input.updateGLBuffers();
 }
 
 float computeAverageArea(const Mesh& mesh)

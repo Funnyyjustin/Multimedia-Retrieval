@@ -77,6 +77,7 @@ void renderObject(fs::path selectedFile)
 {
     Parser p;
     Mesh obj = p.parseOFF(selectedFile.string());
+    obj.updateGLBuffers();
     GLsizei vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
     std::cout << "Number of vertices: " << obj.vertsSize() << std::endl;
     std::cout << "Number of faces: " << obj.primsSize() << std::endl;
@@ -875,7 +876,7 @@ void translateBarycenter(Mesh& input)
 
     if (application_mode == 1)
     {
-        input.updateGLBuffers();
+        //input.updateGLBuffers();
     }
 }
 
@@ -912,7 +913,7 @@ void scaleUniformly(Mesh& input)
 
     if (application_mode == 1)
     {
-        input.updateGLBuffers();
+        //input.updateGLBuffers();
     }
 }
 
@@ -1025,7 +1026,7 @@ void alignAxes(Mesh& input)
     calculateAABB(input);
     if (application_mode == 1)
     {
-        input.updateGLBuffers();
+        //input.updateGLBuffers();
     }
 }
 
@@ -1110,7 +1111,7 @@ void flipShape(Mesh& input)
     calculateAABB(input);
     if (application_mode == 1)
     {
-        input.updateGLBuffers();
+        //input.updateGLBuffers();
     }
 }
 
@@ -1120,9 +1121,12 @@ void normalizeMesh(Mesh& input)
     alignAxes(input);
     flipShape(input);
     scaleUniformly(input);
+
+    if (application_mode == 1)
+        input.updateGLBuffers();
 }
 
-std::vector<Mesh> normalizeMeshes(std::vector<Mesh>& meshes)
+void normalizeMeshes(std::vector<Mesh>& meshes)
 {
     int total = static_cast<int>(meshes.size());
     std::cout << "Normalizing " << total << " meshes in parallel...\n";
@@ -1134,7 +1138,6 @@ std::vector<Mesh> normalizeMeshes(std::vector<Mesh>& meshes)
     }
 
     std::cout << "Finished normalizing meshes.\n";
-    return meshes;
 }
 
 std::vector<std::vector<float>> getDataDeviations()
@@ -1256,7 +1259,8 @@ int main()
         //analyseDatabase(meshes);
 
         // Feature extraction for all meshes
-        std::vector<std::vector<double>> elem_desc = featureExtraction(meshes);
+        std::vector<std::vector<double>> elem_desc;
+        featureExtraction(meshes, elem_desc);
         
         promptNormOrStandard(elem_desc);
 
