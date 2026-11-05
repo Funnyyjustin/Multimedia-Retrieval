@@ -35,11 +35,13 @@ public:
 	Vec3 ev1, ev2, ev3; // Eigenvectors
 	Vec3 eigenvalues;
 
+	float sx; float sy; float sz;
+
 	Mesh() = default;
 	
-	Mesh(const std::vector<Point3>& verts, const std::vector<Face>& fcs): vertices(verts), faces(fcs)
+	Mesh(const std::vector<Point3>&& verts, const std::vector<Face>&& fcs) : vertices(std::move(verts)), faces(std::move(fcs))
 	{
-		updateGLBuffers();
+		//updateGLBuffers();
 	}
 
 	void updateGLBuffers() 
