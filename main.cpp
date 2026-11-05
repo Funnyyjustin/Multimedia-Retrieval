@@ -73,14 +73,7 @@ const char* vertexShaderSource = { "#version 330 core\n"
 
 namespace fs = std::filesystem;
 int application_mode;
-void renderObject(fs::path selectedFile)
-{
-    Parser p;
-    Mesh obj = p.parseOFF(selectedFile.string());
-    obj.updateGLBuffers();
-    GLsizei vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
-    std::cout << "Number of vertices: " << obj.vertsSize() << std::endl;
-    std::cout << "Number of faces: " << obj.primsSize() << std::endl;
+
 
 // Helper functions
 
@@ -948,6 +941,7 @@ void renderObject(fs::path selectedFile)
     Parser p;
     Mesh obj = p.parseOFF(selectedFile.string());
     normalizeMesh(obj);
+    obj.updateGLBuffers();
     GLsizei vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
     std::cout << "Number of vertices: " << obj.vertsSize() << std::endl;
     std::cout << "Number of faces: " << obj.primsSize() << std::endl;
@@ -1325,7 +1319,11 @@ int main()
 		
         auto queryFeatures = featureExtract(queryMesh);
         auto temp = queryFeatures;
-        FeatureData featureData = promptNormOrStandFeatures(queryFeatures);
+
+        StandardizationData stdData = readStandardizationData(standardizationDataFilePath.string());
+        standardizeWithData(queryFeatures, stdData);
+        normalizeHistogram(queryFeatures);
+        FeatureData featureData = readFeatures(fullFeaturesStandFilePath);
 
         saveWeights(computeWeightsFromDatabase(featureData.features));
 
