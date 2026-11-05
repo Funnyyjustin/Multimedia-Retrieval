@@ -310,6 +310,51 @@ void exportEvaluationToCSV(const std::vector<std::pair<float, float>>& points, c
     std::cout << "Successfully exported " << points.size() << " evaluation plot points to " << fullPath << "\n";
 }
 
+void exportEvaluationPerClassToCSV(const std::vector<std::vector<std::pair<float,float>>>& points_per_class,
+    const std::vector<float>& total_area_per_class,
+    const std::vector<string>& labels,
+    const std::vector<int>& obj_counts,
+    const std::string& filename)
+{
+    std::string fullPath = filename;
+    if (fullPath.size() < 4 || fullPath.substr(fullPath.size() - 4) != ".csv")
+    {
+        fullPath += ".csv";
+    }
+
+    std::ofstream file(fullPath);
+    if (!file.is_open())
+    {
+        std::cerr << "Error: Could not open file " << fullPath << " for writing.\n";
+        return;
+    }
+
+    if (points_per_class.empty())
+    {
+        std::cerr << "Warning: Points list is empty.\n";
+        return;
+    }
+
+    file << "Class;Sensitivity;Specificity;AUC\n";
+
+    // Write data rows
+    int current_class = 0;
+    for (int i = 0; i < points_per_class.size(); i++)
+    {
+        auto str = labels[current_class];
+        auto& entry = points_per_class[i];
+        for (int j = 0; j < entry.size(); j++)
+        {
+            file << str << ";" << entry[j].first << ";" << entry[j].second << "\n";
+        }
+        file << str << ";;;" << total_area_per_class[i] << "\n";
+        file << "\n";
+        current_class += obj_counts[i];
+    }
+
+    std::cout << "Successfully exported " << points_per_class.size() << " classes' plot points to " << fullPath << "\n";
+}
+
 // Database analyse functions
 
 std::vector<Mesh> parseDatabase(fs::path path)
@@ -1396,6 +1441,7 @@ int main()
         saveWeights(computeWeightsFromDatabase(database.features));
 
         std::vector<std::pair<float, float>> plot_points;
+        std::vector<std::vector<std::pair<float, float>>> plot_points_per_class(69);
 
         // k = number of items returned in the query
         for (int k = 0; k <= 2483; k += metric)
@@ -1406,18 +1452,29 @@ int main()
             int current_class = 0;
             int current_obj = 0;
 
-            float total_tp = 0;
-            float total_fp = 0;
-            float total_fn = 0;
-            float total_tn = 0;
+            float total_tp = 0, total_fp = 0, total_fn = 0, total_tn = 0;
+            float class_tp = 0, class_fp = 0, class_fn = 0, class_tn = 0;
 
             // For each item in the database, match it against the entire database and calculate sens/spec
-            for (int i = 0; i < db_feats.size(); ++i)
+            for (int i = 0; i <= db_feats.size(); i++)
             {
+                // Onto new class, so save results of previous class
                 if (current_obj >= obj_counts[current_class])
                 {
+                    float sens_class = total_tp / (total_tp + total_fn);
+                    float spec_class = total_tn / (total_tn + total_fp);
+
+                    plot_points_per_class[current_class].push_back(std::make_pair(sens_class, spec_class));
+
+                    class_tp = 0;
+                    class_fp = 0;
+                    class_fn = 0;
+                    class_tn = 0;
+
                     current_obj = 0;
                     current_class++;
+
+                    if (i == db_feats.size()) break;
                 }
 
                 float tp = 0, fn = 0, fp = 0, tn = 0;
@@ -1450,6 +1507,11 @@ int main()
                 total_fn += fn;
                 total_tn += tn;
 
+                class_tp += tp;
+                class_fp += fp;
+                class_fn += fn;
+                class_tn += tn;
+
                 current_obj++;
             }
 
@@ -1472,6 +1534,21 @@ int main()
             total_area += ((p1.second + p2.second) / 2) * (p2.first - p1.first);
         }
 
+        std::vector<float> total_area_per_class;
+        for (int i = 0; i < plot_points_per_class.size(); i++)
+        {
+            auto& v = plot_points_per_class[i];
+            float total_area_class = 0;
+            for (int j = 0; j < v.size() - 1; j++)
+            {
+                auto& p1 = v[j];
+                auto& p2 = v[j + 1];
+
+                total_area_class += ((p1.second + p2.second) / 2) * (p2.first - p1.first);
+            }
+            total_area_per_class.push_back(total_area_class);
+        }
+
         std::cout << "Evaluation score: " << total_area << "\n";
 
         // Save to CSV
@@ -1486,7 +1563,11 @@ int main()
             std::cin >> filename;
 
             if (filename.size() > 0)
+            {
                 exportEvaluationToCSV(plot_points, total_area, filename);
+                exportEvaluationPerClassToCSV(plot_points_per_class, total_area_per_class, database.labels, obj_counts, filename + "_per_class");
+            }
+                
             else std::cout << "Cannot save to CSV file.\n";
         }
 
