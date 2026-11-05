@@ -1,10 +1,23 @@
 #pragma once
 #include <vector>
+#include <array>
+#include "globals.h"
+
+const int numSingleFeatures = 6;
+const int numHistograms = 5;
+const int numHistogramBins = 20;
+const int numFeatures = numSingleFeatures + numHistograms * numHistogramBins;
+constexpr size_t NUM_SINGLE_GROUPS = 1;
+constexpr size_t NUM_GROUPS = NUM_SINGLE_GROUPS + numHistograms;   // 1 + 5 = 6
+constexpr double SINGLE_MASS_SHIFT = 3.0;
+using FeatureWeights = std::array<double, NUM_GROUPS>;
 
 void normalizeFeatures(std::vector<std::vector<double>> &features)
 {
-	std::ofstream file("normalization_data.csv");
+	std::ofstream file(normalizationDataFilePath);
 	file << "Min value;Max value\n";
+
+	int fSize = features.size();
 
 	for (int col = 0; col < features[0].size(); col++)
 	{
@@ -36,23 +49,30 @@ void normalizeFeatures(std::vector<std::vector<double>> &features)
 	file.close();
 }
 
-void standardizeFeatures(std::vector<std::vector<double>>& features)
+void standardizeSingleFeatures(std::vector<std::vector<double>>& features)
 {
-	std::ofstream file("standardization_data.csv");
+	std::ofstream file(standardizationDataFilePath);
 	file << "Mean;Standard Deviation\n";
 
-	for (int col = 0; col < features[0].size(); col++)
+	int fSize = features.size();
+
+	for (int col = 0; col < numSingleFeatures; col++)
 	{
 		double sum = 0.0;
-		int n = features.size();
-		for (int row = 0; row < n; row++)
+		for (int row = 0; row < fSize; row++)
 		{
 			sum += features[row][col];
 		}
-		double mean = sum / n;
-		double variance = (pow(sum, 2) / n) - (mean * mean);
-		double stddev = sqrt(variance);
-		for (int row = 0; row < n; row++)
+		double mean = sum / fSize;
+
+		double sqrtSum = 0.0;
+		for (int row = 0; row < fSize; row++)
+		{
+			sqrtSum += pow(features[row][col] - mean, 2);
+		}
+		double stddev = sqrt(sqrtSum / fSize);
+
+		for (int row = 0; row < fSize; row++)
 		{
 			if (stddev > 1e-9) // Avoid division by zero
 				features[row][col] = (features[row][col] - mean) / stddev;
@@ -61,7 +81,52 @@ void standardizeFeatures(std::vector<std::vector<double>>& features)
 		}
 		file << mean << ";" << stddev << "\n";
 	}
+
 	file.close();
+}
+
+void normalizeHistogram(std::vector<double>& row)
+{
+	for (int i = 0; i < numHistograms; i++)
+	{
+		int startCol = numSingleFeatures + i * numHistogramBins;
+		int endCol = startCol + numHistogramBins;
+
+		double sum = 0.0;
+		for (int col = startCol; col < endCol; col++)
+		{
+			sum += row[col];
+		}
+		if (sum > 1e-9) // Avoid division by zero
+		{
+			for (int col = startCol; col < endCol; col++)
+			{
+				row[col] /= sum;
+			}
+		}
+		else
+		{
+			for (int col = startCol; col < endCol; col++)
+			{
+				row[col] = 0.0; // If sum is zero, set all to zero
+			}
+		}
+	}
+}
+
+// written by copilot, need to check if it works correctly
+void normalizeHistograms(std::vector<std::vector<double>>& features)
+{
+	for (auto& row : features)
+	{
+		normalizeHistogram(row);
+	}
+}
+
+void standardizeFeatures(std::vector<std::vector<double>>& features)
+{
+	standardizeSingleFeatures(features);
+	normalizeHistograms(features); // Normalizing histograms is equivalent to standardizing them
 }
 
 void promptNormOrStandard(std::vector<std::vector<double>>& features)
@@ -165,7 +230,8 @@ void normalizeWithData(std::vector<double>& features, const NormalizationData& d
 
 void standardizeWithData(std::vector<double>& features, const StandardizationData& data)
 {
-	for (size_t i = 0; i < features.size(); ++i)
+	int c = std::min(data.means.size(), features.size());
+	for (size_t i = 0; i < c; ++i)
 	{
 		if (data.stddevs[i] > 1e-9) // Avoid division by zero
 			features[i] = (features[i] - data.means[i]) / data.stddevs[i];
@@ -174,73 +240,6 @@ void standardizeWithData(std::vector<double>& features, const StandardizationDat
 	}
 }
 
-struct FeatureData
-{
-	std::vector<std::string> labels;
-	std::vector<std::vector<double>> features;
-};
 
-FeatureData readFeatures(fs::path filePath)
-{
-	std::vector<std::vector<double>> features;
-	std::vector<std::string> labels;
-
-	std::ifstream file(filePath);
-
-	if (!file.is_open())
-	{
-		std::cerr << "Error: Could not open file " << filePath << std::endl;
-		return {};
-	}
-
-	std::string line;
-	std::getline(file, line); // Skip header line
-
-	while (std::getline(file, line))
-	{
-		std::stringstream ss(line);
-		std::string word;
-
-		std::getline(ss, word, ';'); // Read ID
-		std::getline(ss, word, ';'); // Read label
-		labels.push_back(word);
-
-		std::vector<double> row;
-		while (std::getline(ss, word, ';'))
-		{
-			if (!word.empty())
-				row.push_back(std::stod(word));
-		}
-		features.push_back(row);
-	}
-
-
-	return FeatureData{ labels, features };
-}
-
-FeatureData promptNormOrStandFeatures(std::vector<double>& queryFeatures)
-{
-	std::cout << "Type 1 to match with normalized features, 2 to match with standardized features: ";
-	int choice;
-	std::cin >> choice;
-
-	if (choice == 1)
-	{
-		NormalizationData normData = readNormalizationData("normalization_data.csv");
-		normalizeWithData(queryFeatures, normData);
-		return readFeatures("full_features_norm.csv");
-	}
-	else if (choice == 2)
-	{
-		StandardizationData stdData = readStandardizationData("standardization_data.csv");
-		standardizeWithData(queryFeatures, stdData);
-		return readFeatures("full_features_stand.csv");
-	}
-	else
-	{
-		std::cout << "Invalid input.\n";
-		promptNormOrStandFeatures(queryFeatures);
-	}
-}
 
 

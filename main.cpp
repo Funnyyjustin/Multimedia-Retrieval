@@ -18,28 +18,16 @@
 #include "QuickSort.h"
 #include "FeatureNormStand.h"
 #include "Matching.h"
+#include "matchheur.h"
+#include "globals.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/pca.hpp>
 #include <glm/glm.hpp>
 
-namespace fs = std::filesystem;
-int application_mode;
+std::vector<std::string> paths;
 
-// Render functions
-
-const char* vertexShaderSource = "#version 330 core\n"
-"layout (location = 0) in vec3 aPos;\n"
-"uniform mat4 uMVP;\n"
-"uniform mat4 uModelView;\n"
-"out vec3 FragPosEye;\n"
-"void main()\n"
-"{\n"
-"   FragPosEye = vec3(uModelView * vec4(aPos, 1.0));\n"
-"   gl_Position = uMVP * vec4(aPos, 1.0);\n"
-"}\0";
-
-const char* fragmentShaderSource = "#version 330 core\n"
+const char* fragmentShaderSource = { "#version 330 core\n"
 "in vec3 FragPosEye;\n"
 "uniform vec4 uColor;\n"
 "uniform bool uUseLighting;\n"
@@ -71,291 +59,22 @@ const char* fragmentShaderSource = "#version 330 core\n"
 "   vec3 specular = vec3(0.2) * spec;\n"
 "\n"
 "   FragColor = vec4(ambient + diffuse + specular, uColor.a);\n"
-"}\n\0";
+"}\n\0" } ;
+const char* vertexShaderSource = { "#version 330 core\n"
+"layout (location = 0) in vec3 aPos;\n"
+"uniform mat4 uMVP;\n"
+"uniform mat4 uModelView;\n"
+"out vec3 FragPosEye;\n"
+"void main()\n"
+"{\n"
+"   FragPosEye = vec3(uModelView * vec4(aPos, 1.0));\n"
+"   gl_Position = uMVP * vec4(aPos, 1.0);\n"
+"}\0" } ;
 
-void renderObject(fs::path selectedFile)
-{
-    Parser p;
-    Mesh obj = p.parseOFF(selectedFile.string());
-    GLsizei vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
-    std::cout << "Number of vertices: " << obj.vertsSize() << std::endl;
-    std::cout << "Number of faces: " << obj.primsSize() << std::endl;
-
-    glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    // Create window
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Multimedia Retrieval", NULL, NULL);
-    glfwSetMouseButtonCallback(window, mouse_button_callback);
-    glfwSetCursorPosCallback(window, cursor_position_callback);
-    glfwSetScrollCallback(window, scroll_callback);
-    glfwSetKeyCallback(window, key_callback);
-
-    if (window == NULL)
-    {
-        std::cout << "Failed to create GLFW window" << std::endl;
-        glfwTerminate();
-        return;
-    }
-    glfwMakeContextCurrent(window);
-
-    // Initialise GLAD
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-    {
-        std::cout << "Failed to initialize GLAD" << std::endl;
-        return;
-    }
-
-    glViewport(0, 0, 800, 600);
-    glEnable(GL_DEPTH_TEST);
-
-    // Print controls to console
-    std::cout << "\n=== Controls ===\n";
-    std::cout << "  Left Mouse Drag  : Orbit camera\n";
-    std::cout << "  Right Mouse Drag : Pan camera\n";
-    std::cout << "  Scroll Wheel     : Zoom\n";
-    std::cout << "  W / A / S / D    : Move camera\n";
-    std::cout << "  1                : Toggle Edges\n";
-    std::cout << "  2                : Toggle Vertices\n";
-    std::cout << "  3                : Toggle Faces\n";
-    std::cout << "  L                : 1 Step Loop Subdivision (Upsample)\n";
-    std::cout << "  U                : 1 Step Simple Subdivision (Upsample)\n";
-    std::cout << "  K                : 1 Step Decimation (Downsample)\n";
-    std::cout << "  R                : Auto Resample (target 5k - 10k vertices)\n";
-    std::cout << "================\n\n";
-
-    // Load in mesh
-    std::vector<float> vertices = obj.trivertsgl;
-
-    // Compile and load shaders
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
-
-    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-
-    unsigned int shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    // VAO, VBO
-    unsigned int VAO, VBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-
-    glBindVertexArray(VAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-
-    // Data reading
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    // Show window
-    // Render loop
-    int mvpLoc = glGetUniformLocation(shaderProgram, "uMVP");
-    int modelViewLoc = glGetUniformLocation(shaderProgram, "uModelView");
-    int useLightingLoc = glGetUniformLocation(shaderProgram, "uUseLighting");
-    GLint colorLoc = glGetUniformLocation(shaderProgram, "uColor");
-
-    float lastFrameTime = 0.0f;
-
-    while (!glfwWindowShouldClose(window))
-    {
-        // Calculate delta time
-        float currentFrameTime = static_cast<float>(glfwGetTime());
-        float deltaTime = currentFrameTime - lastFrameTime;
-        lastFrameTime = currentFrameTime;
-
-        // Process camera input
-        processCameraKeyboard(window, deltaTime);
-
-        // Process resampling input
-        static bool lKeyPressed = false;
-        if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
-        {
-            if (!lKeyPressed)
-            {
-                lKeyPressed = true;
-                std::cout << "\n[Resample] Performing 1 step of Loop subdivision..." << std::endl;
-                upsampleMeshLoop(obj);
-                glBindBuffer(GL_ARRAY_BUFFER, VBO);
-                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
-                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
-                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
-            }
-        }
-        else if (glfwGetKey(window, GLFW_KEY_L) == GLFW_RELEASE)
-        {
-            lKeyPressed = false;
-        }
-
-        static bool uKeyPressed = false;
-        if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS)
-        {
-            if (!uKeyPressed)
-            {
-                uKeyPressed = true;
-                std::cout << "\n[Resample] Performing 1 step of Simple subdivision..." << std::endl;
-                upsampleMeshSimple(obj);
-                glBindBuffer(GL_ARRAY_BUFFER, VBO);
-                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
-                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
-                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
-            }
-        }
-        else if (glfwGetKey(window, GLFW_KEY_U) == GLFW_RELEASE)
-        {
-            uKeyPressed = false;
-        }
-
-        static bool kKeyPressed = false;
-        if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
-        {
-            if (!kKeyPressed)
-            {
-                kKeyPressed = true;
-                std::cout << "\n[Resample] Performing 1 step of Downsampling (Decimation)..." << std::endl;
-                downsampleMesh(obj);
-                glBindBuffer(GL_ARRAY_BUFFER, VBO);
-                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
-                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
-                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
-            }
-        }
-        else if (glfwGetKey(window, GLFW_KEY_K) == GLFW_RELEASE)
-        {
-            kKeyPressed = false;
-        }
-
-        static bool rKeyPressed = false;
-        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS)
-        {
-            if (!rKeyPressed)
-            {
-                rKeyPressed = true;
-                std::cout << "\n[Resample] Auto-resampling mesh towards 5k - 10k vertices..." << std::endl;
-                resampleMesh(obj);
-                glBindBuffer(GL_ARRAY_BUFFER, VBO);
-                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
-                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
-                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
-            }
-        }
-        else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_RELEASE)
-        {
-            rKeyPressed = false;
-        }
-
-        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        glUseProgram(shaderProgram); \
-
-            // Get camera position
-            glm::vec3 cameraPos, camRight, camUp;
-        getCameraVectors(cameraPos, camRight, camUp);
-
-        // Build matrices
-        glm::mat4 model = glm::mat4(1.0f);
-        glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
-        glm::mat4 modelView = view * model;
-
-        int width, height;
-        glfwGetFramebufferSize(window, &width, &height);
-        float aspect = (height > 0) ? (float)width / (float)height : 1.0f;
-        glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
-        glm::mat4 mvp = projection * view * model;
-
-        // Write to shader
-        glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
-        glUniformMatrix4fv(modelViewLoc, 1, GL_FALSE, glm::value_ptr(modelView));
-
-        // Draw models
-        glBindVertexArray(VAO);
-
-        // Draw faces (with shading)
-        if (showFace)
-        {
-            glUniform1i(useLightingLoc, 1);
-            glUniform4f(colorLoc, 1.0f, 0.5f, 0.2f, 1.0f);
-            glDrawArrays(GL_TRIANGLES, 0, vertexCount);
-        }
-
-        // Draw edges (unlit)
-        if (showEdge)
-        {
-            glUniform1i(useLightingLoc, 0);
-            glUniform4f(colorLoc, 0.2f, 0.1f, 0.05f, 1.0f);
-            glLineWidth(2.0f);
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            glDrawArrays(GL_TRIANGLES, 0, vertexCount);
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        }
-
-        // Draw nodes (unlit)
-        if (showNode)
-        {
-            glUniform1i(useLightingLoc, 0);
-            glUniform4f(colorLoc, 1.0f, 0.0f, 0.0f, 1.0f);
-            glPointSize(4.0f);
-            glDrawArrays(GL_POINTS, 0, vertexCount);
-        }
-
-
-        glfwSwapBuffers(window);
-        glfwPollEvents();
-    }
-
-    // Clean memory
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
-    glDeleteProgram(shaderProgram);
-
-    glfwTerminate();
-}
-
-void promptRenderObject()
-{
-    fs::path selectedFile = selectModelFile("ObjectFiles");
-    if (selectedFile.empty())
-    {
-        std::cout << "Error: File is empty.\n";
-        promptRenderObject();
-    }
-
-    std::cout << "Loading file: " << selectedFile.string() << "\n";
-    renderObject(selectedFile);
-    promptRenderObject();
-}
+namespace fs = std::filesystem;
+int application_mode;
 
 // Helper functions
-
-void renderObject(int id)
-{
-    fs::path path = selectModelFile(id);
-    renderObject(path);
-}
-
-void renderObjects(std::vector<int> ids)
-{
-    for (int id : ids)
-    {
-        renderObject(id);
-    }
-}
 
 std::vector<int> flatten(std::vector<std::vector<int>>& vec)
 {
@@ -569,7 +288,7 @@ std::vector<Mesh> parseDatabase(fs::path path)
     std::cout << "Type in the max number of classes to parse (0-69):\n";
     std::cin >> class_limit;
 
-    std::cout << "Type in the max number of shapes per class to parse (0-100):\n";
+    std::cout << "Type in the max number of shapes per class to parse (0-143):\n";
     std::cin >> shape_limit;
 
     struct Task {
@@ -852,7 +571,7 @@ void calculateAABB(Mesh& input)
 
 void translateBarycenter(Mesh& input)
 {
-    std::cout << "Translating..\n";
+    //std::cout << "Translating..\n";
 
     if (input.vertices.empty()) return;
 
@@ -882,7 +601,7 @@ void translateBarycenter(Mesh& input)
 
 void scaleUniformly(Mesh& input)
 {
-    std::cout << "Scaling..\n";
+    //std::cout << "Scaling..\n";
 
     if (input.vertices.empty()) return;
 
@@ -919,7 +638,7 @@ void scaleUniformly(Mesh& input)
 
 void alignAxes(Mesh& input)
 {
-    std::cout << "Rotating..\n";
+    //std::cout << "Rotating..\n";
 
     // Step 1: Compute Covariance Matrix (3x3)
     // Can be calculated by first putting all vertices in a Nx3 matrix V (so each row of the matrix is a xyz of a vertex in the shape)
@@ -1039,7 +758,7 @@ int sign(float i)
 
 void flipShape(Mesh& input)
 {
-    std::cout << "Flipping..\n";
+    //std::cout << "Flipping..\n";
 
     // The idea is to have the sides of the shapes that have more mass always be on the same side of some axis
     // We can do this by first calculating the centers of all triangles
@@ -1140,7 +859,7 @@ std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
 
 std::vector<std::vector<float>> getDataDeviations()
 {
-    std::ifstream file("histograms.csv");
+    std::ifstream file(histogramsFilePath);
     std::vector<std::vector<float>> data;
     float sumFaces = 0;
     float sumVerts = 0;
@@ -1213,10 +932,300 @@ std::vector<std::vector<float>> getDataDeviations()
     return data;
 }
 
+// Render functions
+
+void renderObject(fs::path selectedFile)
+{
+    Parser p;
+    Mesh obj = p.parseOFF(selectedFile.string());
+    normalizeMesh(obj);
+    GLsizei vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+    std::cout << "Number of vertices: " << obj.vertsSize() << std::endl;
+    std::cout << "Number of faces: " << obj.primsSize() << std::endl;
+
+    glfwInit();
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    // Create window
+    GLFWwindow* window = glfwCreateWindow(800, 600, "Multimedia Retrieval", NULL, NULL);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
+    glfwSetCursorPosCallback(window, cursor_position_callback);
+    glfwSetScrollCallback(window, scroll_callback);
+    glfwSetKeyCallback(window, key_callback);
+
+    if (window == NULL)
+    {
+        std::cout << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        return;
+    }
+    glfwMakeContextCurrent(window);
+
+    // Initialise GLAD
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    {
+        std::cout << "Failed to initialize GLAD" << std::endl;
+        return;
+    }
+
+    glViewport(0, 0, 800, 600);
+    glEnable(GL_DEPTH_TEST);
+
+    // Print controls to console
+    std::cout << "\n=== Controls ===\n";
+    std::cout << "  Left Mouse Drag  : Orbit camera\n";
+    std::cout << "  Right Mouse Drag : Pan camera\n";
+    std::cout << "  Scroll Wheel     : Zoom\n";
+    std::cout << "  W / A / S / D    : Move camera\n";
+    std::cout << "  1                : Toggle Edges\n";
+    std::cout << "  2                : Toggle Vertices\n";
+    std::cout << "  3                : Toggle Faces\n";
+    std::cout << "  L                : 1 Step Loop Subdivision (Upsample)\n";
+    std::cout << "  U                : 1 Step Simple Subdivision (Upsample)\n";
+    std::cout << "  K                : 1 Step Decimation (Downsample)\n";
+    std::cout << "  R                : Auto Resample (target 5k - 10k vertices)\n";
+    std::cout << "================\n\n";
+
+	std::cout << "File: " << selectedFile.string() << std::endl;
+
+    // Load in mesh
+    std::vector<float> vertices = obj.trivertsgl;
+
+    // Compile and load shaders
+    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShader);
+
+    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShader);
+
+    unsigned int shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    // VAO, VBO
+    unsigned int VAO, VBO;
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+
+    glBindVertexArray(VAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+
+    // Data reading
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    // Show window
+    // Render loop
+    int mvpLoc = glGetUniformLocation(shaderProgram, "uMVP");
+    int modelViewLoc = glGetUniformLocation(shaderProgram, "uModelView");
+    int useLightingLoc = glGetUniformLocation(shaderProgram, "uUseLighting");
+    GLint colorLoc = glGetUniformLocation(shaderProgram, "uColor");
+
+    float lastFrameTime = 0.0f;
+
+    while (!glfwWindowShouldClose(window))
+    {
+        // Calculate delta time
+        float currentFrameTime = static_cast<float>(glfwGetTime());
+        float deltaTime = currentFrameTime - lastFrameTime;
+        lastFrameTime = currentFrameTime;
+
+        // Process camera input
+        processCameraKeyboard(window, deltaTime);
+
+        // Process resampling input
+        static bool lKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
+        {
+            if (!lKeyPressed)
+            {
+                lKeyPressed = true;
+                std::cout << "\n[Resample] Performing 1 step of Loop subdivision..." << std::endl;
+                upsampleMeshLoop(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_L) == GLFW_RELEASE)
+        {
+            lKeyPressed = false;
+        }
+
+        static bool uKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS)
+        {
+            if (!uKeyPressed)
+            {
+                uKeyPressed = true;
+                std::cout << "\n[Resample] Performing 1 step of Simple subdivision..." << std::endl;
+                upsampleMeshSimple(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_U) == GLFW_RELEASE)
+        {
+            uKeyPressed = false;
+        }
+
+        static bool kKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
+        {
+            if (!kKeyPressed)
+            {
+                kKeyPressed = true;
+                std::cout << "\n[Resample] Performing 1 step of Downsampling (Decimation)..." << std::endl;
+                downsampleMesh(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_K) == GLFW_RELEASE)
+        {
+            kKeyPressed = false;
+        }
+
+        static bool rKeyPressed = false;
+        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS)
+        {
+            if (!rKeyPressed)
+            {
+                rKeyPressed = true;
+                std::cout << "\n[Resample] Auto-resampling mesh towards 5k - 10k vertices..." << std::endl;
+                resampleMesh(obj);
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferData(GL_ARRAY_BUFFER, obj.trivertsgl.size() * sizeof(float), obj.trivertsgl.data(), GL_STATIC_DRAW);
+                vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
+                std::cout << "[Resample] Done! Vertices: " << obj.vertsSize() << ", Faces: " << obj.primsSize() << std::endl;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_RELEASE)
+        {
+            rKeyPressed = false;
+        }
+
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        glUseProgram(shaderProgram); \
+
+            // Get camera position
+            glm::vec3 cameraPos, camRight, camUp;
+        getCameraVectors(cameraPos, camRight, camUp);
+
+        // Build matrices
+        glm::mat4 model = glm::mat4(1.0f);
+        glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 modelView = view * model;
+
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
+        float aspect = (height > 0) ? (float)width / (float)height : 1.0f;
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+        glm::mat4 mvp = projection * view * model;
+
+        // Write to shader
+        glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
+        glUniformMatrix4fv(modelViewLoc, 1, GL_FALSE, glm::value_ptr(modelView));
+
+        // Draw models
+        glBindVertexArray(VAO);
+
+        // Draw faces (with shading)
+        if (showFace)
+        {
+            glUniform1i(useLightingLoc, 1);
+            glUniform4f(colorLoc, 1.0f, 0.5f, 0.2f, 1.0f);
+            glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+        }
+
+        // Draw edges (unlit)
+        if (showEdge)
+        {
+            glUniform1i(useLightingLoc, 0);
+            glUniform4f(colorLoc, 0.2f, 0.1f, 0.05f, 1.0f);
+            glLineWidth(2.0f);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        }
+
+        // Draw nodes (unlit)
+        if (showNode)
+        {
+            glUniform1i(useLightingLoc, 0);
+            glUniform4f(colorLoc, 1.0f, 0.0f, 0.0f, 1.0f);
+            glPointSize(4.0f);
+            glDrawArrays(GL_POINTS, 0, vertexCount);
+        }
+
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    // Clean memory
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
+    glDeleteProgram(shaderProgram);
+
+    glfwTerminate();
+}
+
+void promptRenderObject()
+{
+    fs::path selectedFile = selectModelFile("ObjectFiles");
+    if (selectedFile.empty())
+    {
+        std::cout << "Error: File is empty.\n";
+        promptRenderObject();
+    }
+
+    std::cout << "Loading file: " << selectedFile.string() << "\n";
+    renderObject(selectedFile);
+    promptRenderObject();
+}
+
+void renderObject(int id)
+{
+    fs::path path = paths[id];
+    renderObject(path);
+}
+
+void renderObjects(std::vector<int> ids)
+{
+    for (int id : ids)
+    {
+        renderObject(id);
+    }
+}
+
 // Main functions
 
 int main()
 {
+    makeidpathcsv();
+    paths = readPaths();
+
     omp_set_num_threads(omp_get_max_threads());
 
     std::cout << "Multimedia Retrieval tool\n";
@@ -1255,11 +1264,10 @@ int main()
 
         // Normalization --> remeshing, translation, (rotation), (flipping), scaling
         std::vector<Mesh> normalized_meshes = normalizeMeshes(precomputated_meshes);
-        //analyseDatabase(normalized_meshes);
 
         // Feature extraction for all meshes
         std::vector<std::vector<double>> elem_desc = featureExtraction(normalized_meshes);
-        
+        promptSaveFeatures(normalized_meshes, elem_desc);
         promptNormOrStandard(elem_desc);
 
         // Prompt to save feature vectors to CSV
@@ -1301,29 +1309,30 @@ int main()
 		Mesh queryMesh = p.parseOFF(path.string());
 
         resampleMesh(queryMesh);
+        precomputeMesh(queryMesh);
 		normalizeMesh(queryMesh);
-		precomputeMesh(queryMesh);
 		renderObject(path);
 		
         auto queryFeatures = featureExtract(queryMesh);
         auto temp = queryFeatures;
         FeatureData featureData = promptNormOrStandFeatures(queryFeatures);
-
-	    const N = featureData.
+	    
+        const N = featureData;
         // Scalability reduce feature space
         ANNpointArray dataPts = annAllocPts(N, D);
 	    
-        std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures);
+        std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures, readWeights());
 
         quicksort(distances, 1, 0, distances.size() - 1);
-        for (int k = 0; k < 5; k++)
-            std::cout << "row " << (size_t)distances[k][0] << "  dist " << distances[k][1]
-            << "  label " << featureData.labels[(size_t)distances[k][0]] << "\n";
 
         std::cout << "Enter how many results: " << std::endl;
-
         int k;
         std::cin >> k;
+
+        for (int i = 0; i < k; i++)
+            std::cout << "file " << paths[distances[i][0]] << "  dist " << distances[i][1]
+            << "  label " << featureData.labels[(size_t)distances[i][0]] << "\n";
+
         std::vector<int> kbest;
 
         for (int i = 0; i < k; i++)
