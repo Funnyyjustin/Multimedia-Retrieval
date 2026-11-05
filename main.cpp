@@ -1309,6 +1309,10 @@ int main()
         auto temp = queryFeatures;
         FeatureData featureData = promptNormOrStandFeatures(queryFeatures);
 
+	    const N = featureData.
+        // Scalability reduce feature space
+        ANNpointArray dataPts = annAllocPts(N, D);
+	    
         std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures);
 
         quicksort(distances, 1, 0, distances.size() - 1);
