@@ -74,7 +74,6 @@ const char* vertexShaderSource = { "#version 330 core\n"
 namespace fs = std::filesystem;
 int application_mode;
 
-
 // Helper functions
 
 std::vector<int> flatten(std::vector<std::vector<int>>& vec)
@@ -277,6 +276,38 @@ void promptSaveFeatures(const std::vector<Mesh>& meshes, const std::vector<std::
     {
         std::cout << "Invalid input. Skipping CSV export.\n";
     }
+}
+
+void exportEvaluationToCSV(const std::vector<std::pair<float, float>>& points, const float& total_area, const std::string& filename)
+{
+    std::string fullPath = filename;
+    if (fullPath.size() < 4 || fullPath.substr(fullPath.size() - 4) != ".csv")
+    {
+        fullPath += ".csv";
+    }
+
+    std::ofstream file(fullPath);
+    if (!file.is_open())
+    {
+        std::cerr << "Error: Could not open file " << fullPath << " for writing.\n";
+        return;
+    }
+
+    if (points.empty())
+    {
+        std::cerr << "Warning: Points list is empty.\n";
+        return;
+    }
+
+    file << "Plot point id;Sensitivity;Specificity;;" << total_area << "\n";
+
+    // Write data rows
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        file << i << ";" << points[i].first << ";" << points[i].second << "\n";
+    }
+
+    std::cout << "Successfully exported " << points.size() << " evaluation plot points to " << fullPath << "\n";
 }
 
 // Database analyse functions
@@ -1226,7 +1257,7 @@ void renderObjects(std::vector<int> ids)
 
 int main()
 {
-    makeidpathcsv();
+    auto obj_counts = makeidpathcsv();
     paths = readPaths();
 
     omp_set_num_threads(omp_get_max_threads());
@@ -1238,9 +1269,9 @@ int main()
     std::cout << "3. Histogram export mode\n";
     std::cout << "4. Outlier mode \n";
     std::cout << "5. Query mode \n";
+    std::cout << "6. Evaluation mode \n";
     
     std::cin >> application_mode;
-
 
     // Rendering mode
     if (application_mode == 1)
@@ -1248,7 +1279,7 @@ int main()
         promptRenderObject();
     }
 
-    // Analyse mode
+    // Feature extraction mode
     else if (application_mode == 2)
     {
         // Analyse initial database
@@ -1278,12 +1309,13 @@ int main()
         promptSaveFeatures(meshes, elem_desc);
     }
     
-    //Histogram mode
+    // Histogram mode
     else if (application_mode == 3)
     {
         runHistogramMode();
     }
 
+    // Outlier mode
     else if (application_mode == 4) 
     {
         std::cout << "Reading .csv file..." << std::endl;
@@ -1305,6 +1337,7 @@ int main()
         renderObjects(outliers);
     }
 
+    // Querying mode
 	else if (application_mode == 5)
 	{
 		fs::path path = promptPathOrSelect();
@@ -1348,10 +1381,117 @@ int main()
 
         renderObjects(kbest);
 	}
+
+    // Evaluation mode
+    else if (application_mode == 6)
+    {
+        std::cout << "Evaluating system..\n";
+        std::cout << "Enter evaluation metric (1-2483): \n";
+        int metric;
+        std::cin >> metric;
+
+        // Prepare database
+        auto database = readFeatures(fullFeaturesStandFilePath);
+        auto db_feats = database.features;
+        saveWeights(computeWeightsFromDatabase(database.features));
+
+        std::vector<std::pair<float, float>> plot_points;
+
+        // k = number of items returned in the query
+        for (int k = 0; k <= 2483; k += metric)
+        {
+            int per = (((float)k) / 2483.0f) * 100.0f;
+            std::cout << "Evaluating k = " << k << " (" << per << "%)\n";
+
+            int current_class = 0;
+            int current_obj = 0;
+
+            float total_tp = 0;
+            float total_fp = 0;
+            float total_fn = 0;
+            float total_tn = 0;
+
+            // For each item in the database, match it against the entire database and calculate sens/spec
+            for (int i = 0; i < db_feats.size(); ++i)
+            {
+                if (current_obj >= obj_counts[current_class])
+                {
+                    current_obj = 0;
+                    current_class++;
+                }
+
+                float tp = 0, fn = 0, fp = 0, tn = 0;
+
+                // Get distances from queried object to the entire database and sort it
+                auto distances = makeDistanceVector(db_feats, db_feats[i], readWeights());
+                quicksort(distances, 1, 0, distances.size() - 1);
+
+                auto query_label = database.labels[i];
+
+                // Get the k-best items based on the distances
+                for (int j = 0; j < k; j++)
+                {
+                    auto id = distances[j][0];
+                    auto obj_label = database.labels[id];
+
+                    // True positive if labels are identical, false positive otherwise
+                    if (query_label == obj_label)
+                        tp++;
+                    else fp++;
+                }
+
+                // Get number of objects in the class of the queried object
+                auto num_objects_query_class = obj_counts[current_class];
+                fn = num_objects_query_class - tp; // False negatives is the number of objects not returned in the query that are in the class of the queried object
+                tn = 2483 - tp - fp - fn; // 2483 items in the database, the true negatives are everything except the tps, fps and fns
+
+                total_tp += tp;
+                total_fp += fp;
+                total_fn += fn;
+                total_tn += tn;
+
+                current_obj++;
+            }
+
+            // Calculate sens and spec over the entire database for some value k
+            float sens = total_tp / (total_tp + total_fn);
+            float spec = total_tn / (total_tn + total_fp);
+
+            plot_points.push_back(std::make_pair(sens, spec));
+        }
+
+        // We can get area under curve by using the trapezoidal rule
+        // First, we calculate the area of the trapezoid between every two consecutive points
+        // Then, sum all trapezoid areas
+        float total_area = 0;
+        for (int i = 0; i < plot_points.size() - 1; i++)
+        {
+            auto& p1 = plot_points[i];
+            auto& p2 = plot_points[i + 1];
+
+            total_area += ((p1.second + p2.second) / 2) * (p2.first - p1.first);
+        }
+
+        std::cout << "Evaluation score: " << total_area << "\n";
+
+        // Save to CSV
+        std::cout << "Save to CSV file? y/n:\n";
+        char c;
+        std::cin >> c;
+
+        if (c == 'y')
+        {
+            std::cout << "Enter filename:\n";
+            string filename;
+            std::cin >> filename;
+
+            if (filename.size() > 0)
+                exportEvaluationToCSV(plot_points, total_area, filename);
+            else std::cout << "Cannot save to CSV file.\n";
+        }
+
+        std::cout << "Finished evaluation of system.\n";
+    }
 	
     return 0;
 }
-
-
-
-
