@@ -1164,6 +1164,7 @@ int main()
 {
     makeidpathcsv();
     paths = readPaths();
+    
 
     omp_set_num_threads(omp_get_max_threads());
 
@@ -1255,6 +1256,7 @@ int main()
         auto queryFeatures = featureExtract(queryMesh);
         auto temp = queryFeatures;
         FeatureData featureData = promptNormOrStandFeatures(queryFeatures);
+        saveWeights(computeWeightsFromDatabase(featureData.features));
 
         std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures, readWeights());
 

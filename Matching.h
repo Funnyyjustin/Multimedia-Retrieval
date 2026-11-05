@@ -94,58 +94,44 @@ FeatureData promptNormOrStandFeatures(std::vector<double>& queryFeatures)
 	}
 }
 
-// Non-negative masses from the standardized single features, normalized to sum 1
-inline std::array<double, numSingleFeatures> singleMasses(const std::vector<double>& v)
+float DistanceLp(std::vector<double> feature, std::vector<double> query)
 {
-	std::array<double, numSingleFeatures> m{};
-	double total = 0.0;
+	double p = 2;
+	double sum = 0;
 	for (int i = 0; i < numSingleFeatures; i++)
 	{
-		m[i] = std::max(v[i] + SINGLE_MASS_SHIFT, 0.0);
-		total += m[i];
+		sum += pow(fabs(feature[i] - query[i]), p);
 	}
-	if (total > 1e-9)
-		for (double& x : m) x /= total;
-	return m;
+
+	return pow(sum, 1.0 / p);
 }
 
-// EMD over all single-value features together (1D ground distance |i-j|, equal total mass)
-inline double singleFeaturesEMD(const std::vector<double>& a, const std::vector<double>& b)
+double histogramEMD(const std::vector<double>& a, const std::vector<double>& b,
+	int start, int bins)
 {
-	auto ma = singleMasses(a);
-	auto mb = singleMasses(b);
 	double cumA = 0.0, cumB = 0.0, work = 0.0;
-	for (int i = 0; i < numSingleFeatures; i++)
+	for (int i = start; i < start + bins; i++)
 	{
-		cumA += ma[i];
-		cumB += mb[i];
-		work += std::fabs(cumA - cumB);
+		cumA += a[i];
+		cumB += b[i];
+		work += std::fabs(cumA - cumB); 
 	}
 	return work;
 }
 
-// Histogram matching (slide): d(H1,H2) = sqrt( sum_i |H1[i]-H2[i]|^2 )
-inline double histogramDistance(const std::vector<double>& a, const std::vector<double>& b,
-	int start, int bins)
-{
-	double sq = 0.0;
-	for (int i = start; i < start + bins; i++)
-	{
-		double diff = a[i] - b[i];
-		sq += diff * diff;
-	}
-	return std::sqrt(sq);
-}
 
-inline std::array<double, NUM_GROUPS> groupDistances(
+std::array<double, NUM_GROUPS> groupDistances(
 	const std::vector<double>& a, const std::vector<double>& b)
 {
 	std::array<double, NUM_GROUPS> d{};
-	d[0] = singleFeaturesEMD(a, b);                              // group 0: all single features
-	for (int h = 0; h < numHistograms; h++)
+
+	for (size_t i = 0; i < numSingleFeatures; i++)
+		d[i] = std::fabs(a[i] - b[i]);
+
+	for (size_t h = 0; h < numHistograms; h++)
 	{
 		int start = numSingleFeatures + h * numHistogramBins;
-		d[NUM_SINGLE_GROUPS + h] = histogramDistance(a, b, start, numHistogramBins);
+		d[numSingleFeatures + h] = histogramEMD(a, b, start, numHistogramBins);
 	}
 	return d;
 }
@@ -162,13 +148,8 @@ inline double weightedDistance(const std::vector<double>& a,
 	const FeatureWeights& w)
 {
 	auto d = groupDistances(a, b);
-	double p = 1;
 	double total = 0.0;
-	for (size_t g = 0; g < numSingleFeatures; g++)
-		total += w[g] * pow(d[g], p);
-	total = pow(total, 1.0 / p);
-
-	for (size_t g = numSingleFeatures; g < NUM_GROUPS; g++)
+	for (size_t g = 0; g < NUM_GROUPS; g++)
 		total += w[g] * d[g];
 	return total;
 }
@@ -199,9 +180,6 @@ inline FeatureWeights computeWeightsFromDatabase(
 
 
 // Distance functions
-
-
-
 std::vector<std::vector<float>> makeDistanceVector(
 	const std::vector<std::vector<double>>& features,
 	const std::vector<double>& query,
@@ -219,17 +197,7 @@ std::vector<std::vector<float>> makeDistanceVector(
 
 
 // Redundant
-float DistanceLp(std::vector<double> feature, std::vector<double> query)
-{
-	double p = 2;
-	double sum = 0;
-	for (int i = 0; i < feature.size(); i++)
-	{
-		sum += pow(fabs(feature[i] - query[i]), p);
-	}
 
-	return pow(sum, 1.0 / p);
-}
 
 std::vector<std::vector<float>> makeDistanceVector(const std::vector<std::vector<double>>& features, std::vector<double> query)
 {
