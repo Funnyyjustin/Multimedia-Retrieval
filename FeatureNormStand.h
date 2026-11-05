@@ -230,8 +230,7 @@ void normalizeWithData(std::vector<double>& features, const NormalizationData& d
 
 void standardizeWithData(std::vector<double>& features, const StandardizationData& data)
 {
-	int c = std::min(data.means.size(), features.size());
-	for (size_t i = 0; i < c; ++i)
+	for (size_t i = 0; i < numSingleFeatures; ++i)
 	{
 		if (data.stddevs[i] > 1e-9) // Avoid division by zero
 			features[i] = (features[i] - data.means[i]) / data.stddevs[i];

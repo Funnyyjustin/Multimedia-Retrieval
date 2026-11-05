@@ -1206,7 +1206,7 @@ int main()
 
         // Feature extraction for all meshes
         std::vector<std::vector<double>> elem_desc = featureExtraction(normalized_meshes);
-        promptSaveFeatures(normalized_meshes, elem_desc);
+        //promptSaveFeatures(normalized_meshes, elem_desc);
         promptNormOrStandard(elem_desc);
 
         // Prompt to save feature vectors to CSV
@@ -1255,6 +1255,8 @@ int main()
         auto queryFeatures = featureExtract(queryMesh);
         auto temp = queryFeatures;
         FeatureData featureData = promptNormOrStandFeatures(queryFeatures);
+
+        saveWeights(computeWeightsFromDatabase(featureData.features));
 
         std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures, readWeights());
 

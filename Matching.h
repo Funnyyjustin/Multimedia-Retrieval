@@ -164,7 +164,7 @@ inline double weightedDistance(const std::vector<double>& a,
 	auto d = groupDistances(a, b);
 	double p = 1;
 	double total = 0.0;
-	for (size_t g = 0; g < numSingleFeatures; g++)
+	for (size_t g = 0; g < NUM_SINGLE_GROUPS; g++)
 		total += w[g] * pow(d[g], p);
 	total = pow(total, 1.0 / p);
 
@@ -178,19 +178,19 @@ inline FeatureWeights computeWeightsFromDatabase(
 	const std::vector<std::vector<double>>& features)
 {
 	std::array<double, NUM_GROUPS> meanDist{};
-	size_t pairs = 0;
+	size_t total = 0;
 	for (size_t i = 0; i < features.size(); i++)
 		for (size_t j = i + 1; j < features.size(); j++)
 		{
 			auto d = groupDistances(features[i], features[j]);
 			for (size_t g = 0; g < NUM_GROUPS; g++) meanDist[g] += d[g];
-			pairs++;
+			total++;
 		}
 
 	FeatureWeights w{};
 	for (size_t g = 0; g < NUM_GROUPS; g++)
 	{
-		double m = pairs ? meanDist[g] / pairs : 0.0;
+		double m = total ? meanDist[g] / total : 0.0;
 		w[g] = (m > 1e-9) ? 1.0 / m : 0.0;
 	}
 	normalizeWeights(w);
