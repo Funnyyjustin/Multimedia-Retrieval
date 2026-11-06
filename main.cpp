@@ -13,13 +13,14 @@
 #include "camera.h"
 #include "fileSelector.h"
 #include "resampling.h"
-#include "Historgam.h"
+#include "Histogram.h"
 #include "Features.h"
 #include "QuickSort.h"
 #include "FeatureNormStand.h"
 #include "Matching.h"
 #include "matchheur.h"
 #include "globals.h"
+#include "projection.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/pca.hpp>
@@ -1235,7 +1236,8 @@ int main()
     std::cout << "3. Histogram export mode\n";
     std::cout << "4. Outlier mode \n";
     std::cout << "5. Query mode \n";
-    
+    std::cout << "6. project mode \n";
+
     std::cin >> application_mode;
 
 
@@ -1317,30 +1319,171 @@ int main()
         auto temp = queryFeatures;
         FeatureData featureData = promptNormOrStandFeatures(queryFeatures);
 	    
-        const N = featureData;
-        // Scalability reduce feature space
-        ANNpointArray dataPts = annAllocPts(N, D);
-	    
-        std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures, readWeights());
-
-        quicksort(distances, 1, 0, distances.size() - 1);
-
-        std::cout << "Enter how many results: " << std::endl;
-        int k;
-        std::cin >> k;
-
-        for (int i = 0; i < k; i++)
-            std::cout << "file " << paths[distances[i][0]] << "  dist " << distances[i][1]
-            << "  label " << featureData.labels[(size_t)distances[i][0]] << "\n";
-
-        std::vector<int> kbest;
-
-        for (int i = 0; i < k; i++)
+        int N = static_cast<int>(featureData.features.size());
+        int D = (N > 0) ? static_cast<int>(featureData.features[0].size()) : 0;
+        if (N == 0 || D == 0)
         {
-            kbest.push_back(distances[i][0]);
+            std::cerr << "Error: No features found in database.\n";
+            return 0;
         }
 
-        renderObjects(kbest);
+        std::cout << "\n=== Select Search Method ===\n";
+        std::cout << "1. ANN (Approximate Nearest Neighbors kd-tree)\n";
+        std::cout << "2. Linear / Brute-force Search (makeDistanceVector + quicksort)\n";
+        std::cout << "Enter choice (1 or 2): ";
+        int searchMethod = 1;
+        std::cin >> searchMethod;
+
+        if (searchMethod == 1)
+        {
+            ANNpointArray dataPts = annAllocPts(N, D);
+            for (int n = 0; n < N; n++)
+            {
+                for (int d = 0; d < D; d++)
+                {
+                    dataPts[n][d] = featureData.features[n][d];
+                }
+            }
+
+            ANNkd_tree* kdTree = new ANNkd_tree(dataPts, N, D);
+
+            ANNpoint queryPt = annAllocPt(D);
+            for (int d = 0; d < D; d++)
+            {
+                queryPt[d] = queryFeatures[d];
+            }
+
+            std::cout << "\nSelect ANN search type:\n";
+            std::cout << "  k - K-nearest neighbors\n";
+            std::cout << "  r - Radius / Range search\n";
+            std::cout << "Choice (k/r): ";
+            std::string searchType;
+            std::cin >> searchType;
+
+            std::vector<int> results;
+
+            if (searchType == "k" || searchType == "K")
+            {
+                std::cout << "Enter how many results (K): ";
+                int k = 10;
+                std::cin >> k;
+                if (k > N) k = N;
+                if (k < 1) k = 1;
+
+                ANNidxArray nnIdx = new ANNidx[k];
+                ANNdistArray dists = new ANNdist[k];
+
+                kdTree->annkSearch(queryPt, k, nnIdx, dists, 0.0);
+
+                std::cout << "\n--- ANN K-NN Search Results (K = " << k << ") ---\n";
+                for (int i = 0; i < k; i++)
+                {
+                    if (nnIdx[i] != ANN_NULL_IDX && nnIdx[i] >= 0 && nnIdx[i] < N)
+                    {
+                        results.push_back(nnIdx[i]);
+                        float dist = std::sqrt(static_cast<float>(dists[i]));
+                        std::cout << (i + 1) << ". file " << (nnIdx[i] < (int)paths.size() ? paths[nnIdx[i]] : std::to_string(nnIdx[i]))
+                                  << "  dist " << dist
+                                  << "  label " << featureData.labels[nnIdx[i]] << "\n";
+                    }
+                }
+
+                delete[] nnIdx;
+                delete[] dists;
+            }
+            else if (searchType == "r" || searchType == "R")
+            {
+                double r = 1.0;
+                std::cout << "Enter search radius (R): ";
+                std::cin >> r;
+
+                int maxK = N;
+                std::cout << "Enter max number of results to return (1-" << N << ", default " << N << "): ";
+                int inputMax;
+                if (std::cin >> inputMax && inputMax > 0 && inputMax <= N)
+                {
+                    maxK = inputMax;
+                }
+
+                ANNidxArray nnIdx = new ANNidx[maxK];
+                ANNdistArray dists = new ANNdist[maxK];
+                double sqRad = r * r;
+
+                // annkFRSearch retrieves points within distance R (squared distance <= sqRad)
+                int ptsFound = kdTree->annkFRSearch(queryPt, sqRad, maxK, nnIdx, dists, 0.0);
+
+                std::cout << "\n--- ANN Radius Search Results (R = " << r << ", found: " << ptsFound << ") ---\n";
+                int toShow = std::min(ptsFound, maxK);
+                for (int i = 0; i < toShow; i++)
+                {
+                    if (nnIdx[i] != ANN_NULL_IDX && nnIdx[i] >= 0 && nnIdx[i] < N)
+                    {
+                        results.push_back(nnIdx[i]);
+                        float dist = std::sqrt(static_cast<float>(dists[i]));
+                        std::cout << (i + 1) << ". file " << (nnIdx[i] < (int)paths.size() ? paths[nnIdx[i]] : std::to_string(nnIdx[i]))
+                                  << "  dist " << dist
+                                  << "  label " << featureData.labels[nnIdx[i]] << "\n";
+                    }
+                }
+
+                delete[] nnIdx;
+                delete[] dists;
+            }
+            else
+            {
+                std::cout << "Invalid search type selected.\n";
+            }
+
+            delete kdTree;
+            annDeallocPts(dataPts);
+            annDeallocPt(queryPt);
+            annClose();
+
+            if (!results.empty())
+            {
+                renderObjects(results);
+            }
+            else
+            {
+                std::cout << "No matching shapes found to render.\n";
+            }
+        }
+        else // Option 2: Linear / Brute-force search
+        {
+            std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures, readWeights());
+
+            quicksort(distances, 1, 0, distances.size() - 1);
+
+            std::cout << "Enter how many results: ";
+            int k = 10;
+            std::cin >> k;
+            if (k > (int)distances.size()) k = (int)distances.size();
+            if (k < 1) k = 1;
+
+            std::cout << "\n--- Linear Search Results (K = " << k << ") ---\n";
+            std::vector<int> kbest;
+            for (int i = 0; i < k; i++)
+            {
+                int idx = (int)distances[i][0];
+                kbest.push_back(idx);
+                std::cout << (i + 1) << ". file " << (idx < (int)paths.size() ? paths[idx] : std::to_string(idx))
+                          << "  dist " << distances[i][1]
+                          << "  label " << featureData.labels[idx] << "\n";
+            }
+
+            renderObjects(kbest);
+        }
+	} else if (application_mode == 6)
+	{
+		std::cout << "\n=== Mode 6: 2D t-SNE Projection & Scatterplot ===\n";
+		std::vector<double> dummy;
+		FeatureData featureData = promptNormOrStandFeatures(dummy);
+
+		auto points = Projection::getOrComputeEmbedding(featureData.features, featureData.labels, "tsne_embedding.csv");
+		if (!points.empty())
+		{
+			Projection::runScatterplot(points, paths);
+		}
 	}
 	
     return 0;

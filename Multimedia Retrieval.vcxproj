@@ -136,32 +136,46 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ann\ANN.cpp" />
+    <ClCompile Include="ann\bd_fix_rad_search.cpp" />
+    <ClCompile Include="ann\bd_pr_search.cpp" />
+    <ClCompile Include="ann\bd_search.cpp" />
+    <ClCompile Include="ann\bd_tree.cpp" />
     <ClCompile Include="ann\brute.cpp" />
+    <ClCompile Include="ann\kd_dump.cpp" />
     <ClCompile Include="ann\kd_fix_rad_search.cpp" />
+    <ClCompile Include="ann\kd_pr_search.cpp" />
     <ClCompile Include="ann\kd_search.cpp" />
     <ClCompile Include="ann\kd_split.cpp" />
     <ClCompile Include="ann\kd_tree.cpp" />
     <ClCompile Include="ann\kd_util.cpp" />
+    <ClCompile Include="ann\perf.cpp" />
     <ClCompile Include="Features.cpp" />
     <ClCompile Include="glad.c" />
-    <ClCompile Include="Historgam.cpp" />
+    <ClCompile Include="Histogram.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="pbPlot\pbPlots.cpp" />
     <ClCompile Include="pbPlot\supportLib.cpp" />
+    <ClCompile Include="projection.cpp" />
     <ClCompile Include="resampling.cpp" />
+    <ClCompile Include="tsne\sptree.cpp" />
+    <ClCompile Include="tsne\tsne.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ann\bd_tree.h" />
     <ClInclude Include="ann\kd_fix_rad_search.h" />
+    <ClInclude Include="ann\kd_pr_search.h" />
     <ClInclude Include="ann\kd_search.h" />
     <ClInclude Include="ann\kd_split.h" />
     <ClInclude Include="ann\kd_tree.h" />
     <ClInclude Include="ann\kd_util.h" />
+    <ClInclude Include="ann\pr_queue.h" />
+    <ClInclude Include="ann\pr_queue_k.h" />
     <ClInclude Include="camera.h" />
     <ClInclude Include="FeatureNormStand.h" />
     <ClInclude Include="Features.h" />
     <ClInclude Include="fileSelector.h" />
     <ClInclude Include="globals.h" />
-    <ClInclude Include="Historgam.h" />
+    <ClInclude Include="Histogram.h" />
     <ClInclude Include="matchheur.h" />
     <ClInclude Include="Matching.h" />
     <ClInclude Include="MeshSampler.h" />
@@ -170,8 +184,11 @@
     <ClInclude Include="pbPlot\pbPlots.hpp" />
     <ClInclude Include="pbPlot\supportLib.hpp" />
     <ClInclude Include="primitive.h" />
+    <ClInclude Include="projection.h" />
     <ClInclude Include="QuickSort.h" />
     <ClInclude Include="resampling.h" />
+    <ClInclude Include="tsne\sptree.h" />
+    <ClInclude Include="tsne\tsne.h" />
     <ClInclude Include="vec3.h" />
   </ItemGroup>
   <ItemGroup>

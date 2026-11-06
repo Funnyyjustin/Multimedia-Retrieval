@@ -1,4 +1,4 @@
-#include "Historgam.h"
+#include "Histogram.h"
 #include "pbPlot/pbPlots.hpp"
 #include "pbPlot/supportLib.hpp"
 

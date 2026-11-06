@@ -1,6 +1,12 @@
 #pragma once
 #include <vector>
 #include <array>
+#include <string>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <cmath>
+#include <algorithm>
 #include "globals.h"
 
 const int numSingleFeatures = 6;

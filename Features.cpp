@@ -1,5 +1,5 @@
 #include "Features.h"
-#include "Historgam.h"
+#include "Histogram.h"
 #include "MeshSampler.h"
 #include "object.h"
 
