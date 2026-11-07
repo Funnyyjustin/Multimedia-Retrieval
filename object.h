@@ -39,9 +39,9 @@ public:
 
 	Mesh() = default;
 	
-	Mesh(const std::vector<Point3>& verts, const std::vector<Face>& fcs): vertices(verts), faces(fcs)
+	Mesh(const std::vector<Point3>&& verts, const std::vector<Face>&& fcs) : vertices(std::move(verts)), faces(std::move(fcs))
 	{
-		updateGLBuffers();
+		//updateGLBuffers();
 	}
 
 	void updateGLBuffers() 

@@ -279,6 +279,83 @@ void promptSaveFeatures(const std::vector<Mesh>& meshes, const std::vector<std::
     }
 }
 
+void exportEvaluationToCSV(const std::vector<std::pair<float, float>>& points, const float& total_area, const std::string& filename)
+{
+    std::string fullPath = filename;
+    if (fullPath.size() < 4 || fullPath.substr(fullPath.size() - 4) != ".csv")
+    {
+        fullPath += ".csv";
+    }
+
+    std::ofstream file(fullPath);
+    if (!file.is_open())
+    {
+        std::cerr << "Error: Could not open file " << fullPath << " for writing.\n";
+        return;
+    }
+
+    if (points.empty())
+    {
+        std::cerr << "Warning: Points list is empty.\n";
+        return;
+    }
+
+    file << "Plot point id;Sensitivity;Specificity;;" << total_area << "\n";
+
+    // Write data rows
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        file << i << ";" << points[i].first << ";" << points[i].second << "\n";
+    }
+
+    std::cout << "Successfully exported " << points.size() << " evaluation plot points to " << fullPath << "\n";
+}
+
+void exportEvaluationPerClassToCSV(const std::vector<std::vector<std::pair<float,float>>>& points_per_class,
+    const std::vector<float>& total_area_per_class,
+    const std::vector<string>& labels,
+    const std::vector<int>& obj_counts,
+    const std::string& filename)
+{
+    std::string fullPath = filename;
+    if (fullPath.size() < 4 || fullPath.substr(fullPath.size() - 4) != ".csv")
+    {
+        fullPath += ".csv";
+    }
+
+    std::ofstream file(fullPath);
+    if (!file.is_open())
+    {
+        std::cerr << "Error: Could not open file " << fullPath << " for writing.\n";
+        return;
+    }
+
+    if (points_per_class.empty())
+    {
+        std::cerr << "Warning: Points list is empty.\n";
+        return;
+    }
+
+    file << "Class;Sensitivity;Specificity;AUC\n";
+
+    // Write data rows
+    int current_class = 0;
+    for (int i = 0; i < points_per_class.size(); i++)
+    {
+        auto str = labels[current_class];
+        auto& entry = points_per_class[i];
+        for (int j = 0; j < entry.size(); j++)
+        {
+            file << str << ";" << entry[j].first << ";" << entry[j].second << "\n";
+        }
+        file << str << ";;;" << total_area_per_class[i] << "\n";
+        file << "\n";
+        current_class += obj_counts[i];
+    }
+
+    std::cout << "Successfully exported " << points_per_class.size() << " classes' plot points to " << fullPath << "\n";
+}
+
 // Database analyse functions
 
 std::vector<Mesh> parseDatabase(fs::path path)
@@ -328,7 +405,7 @@ std::vector<Mesh> parseDatabase(fs::path path)
 
     std::cout << "Parsing " << total << " files in parallel...\n";
 
-    #pragma omp parallel for schedule(dynamic)
+    //#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         Parser p;
@@ -338,7 +415,7 @@ std::vector<Mesh> parseDatabase(fs::path path)
         int done = ++parsedCount;
         if (done % 100 == 0 || done == total)
         {
-            #pragma omp critical
+            //#pragma omp critical
             std::cout << "[Parsing] Completed " << done << " / " << total << " files.\n";
         }
     }
@@ -417,14 +494,14 @@ void analyseDatabase(const std::vector<Mesh>& meshes)
 
 // Resample functions
 
-std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes, int minVert = minVertCount, int maxVert = maxVertCount)
+void resampleMeshes(std::vector<Mesh>& meshes, int minVert = minVertCount, int maxVert = maxVertCount)
 {
     int total = static_cast<int>(meshes.size());
     std::cout << "Resampling " << total << " meshes in parallel...\n";
 
     std::atomic<int> completed{0};
 
-    #pragma omp parallel for schedule(dynamic)
+    //#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         resampleMesh(meshes[i], minVert, maxVert);
@@ -432,7 +509,7 @@ std::vector<Mesh> resampleMeshes(std::vector<Mesh> meshes, int minVert = minVert
         int done = ++completed;
         if (done % 20 == 0 || done == total)
         {
-            #pragma omp critical
+            //#pragma omp critical
             std::cout << "[Resampling] Completed " << done << " / " << total << " meshes (" << (done * 100 / total) << "%)\n";
         }
     }
@@ -536,7 +613,7 @@ void precomputeMeshes(std::vector<Mesh>& meshes)
     int total = static_cast<int>(meshes.size());
     std::cout << "Precomputing " << total << " meshes in parallel...\n";
 
-    #pragma omp parallel for schedule(dynamic)
+    //#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         precomputeMesh(meshes[i]);
@@ -596,7 +673,7 @@ void translateBarycenter(Mesh& input)
 
     if (application_mode == 1)
     {
-        input.updateGLBuffers();
+        //input.updateGLBuffers();
     }
 }
 
@@ -633,7 +710,7 @@ void scaleUniformly(Mesh& input)
 
     if (application_mode == 1)
     {
-        input.updateGLBuffers();
+        //input.updateGLBuffers();
     }
 }
 
@@ -746,7 +823,7 @@ void alignAxes(Mesh& input)
     calculateAABB(input);
     if (application_mode == 1)
     {
-        input.updateGLBuffers();
+        //input.updateGLBuffers();
     }
 }
 
@@ -831,7 +908,7 @@ void flipShape(Mesh& input)
     calculateAABB(input);
     if (application_mode == 1)
     {
-        input.updateGLBuffers();
+        //input.updateGLBuffers();
     }
 }
 
@@ -841,21 +918,23 @@ void normalizeMesh(Mesh& input)
     alignAxes(input);
     flipShape(input);
     scaleUniformly(input);
+
+    if (application_mode == 1)
+        input.updateGLBuffers();
 }
 
-std::vector<Mesh> normalizeMeshes(std::vector<Mesh> meshes)
+void normalizeMeshes(std::vector<Mesh>& meshes)
 {
     int total = static_cast<int>(meshes.size());
     std::cout << "Normalizing " << total << " meshes in parallel...\n";
 
-    #pragma omp parallel for schedule(dynamic)
+    //#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         normalizeMesh(meshes[i]);
     }
 
     std::cout << "Finished normalizing meshes.\n";
-    return meshes;
 }
 
 std::vector<std::vector<float>> getDataDeviations()
@@ -940,6 +1019,7 @@ void renderObject(fs::path selectedFile)
     Parser p;
     Mesh obj = p.parseOFF(selectedFile.string());
     normalizeMesh(obj);
+    obj.updateGLBuffers();
     GLsizei vertexCount = static_cast<GLsizei>(obj.trivertsgl.size() / 3);
     std::cout << "Number of vertices: " << obj.vertsSize() << std::endl;
     std::cout << "Number of faces: " << obj.primsSize() << std::endl;
@@ -1236,7 +1316,8 @@ int main()
     std::cout << "3. Histogram export mode\n";
     std::cout << "4. Outlier mode \n";
     std::cout << "5. Query mode \n";
-    std::cout << "6. project mode \n";
+    std::cout << "6. Evaluation mode \n";
+    std::cout << "7. project mode \n";
 
     std::cin >> application_mode;
 
@@ -1247,41 +1328,43 @@ int main()
         promptRenderObject();
     }
 
-    // Analyse mode
+    // Feature extraction mode
     else if (application_mode == 2)
     {
         // Analyse initial database
         fs::path objectFiles = "ObjectFiles";
-        std::vector<Mesh> original_meshes = parseDatabase(objectFiles);
-        //analyseDatabase(original_meshes);
+        std::vector<Mesh> meshes = parseDatabase(objectFiles);
+        //analyseDatabase(meshes);
 
         // Resample meshes
-        std::vector<Mesh> resampled_meshes = resampleMeshes(original_meshes);
-        //analyseDatabase(resampled_meshes);
+        resampleMeshes(meshes);
+        //analyseDatabase(meshes);
 
         // Precompute values of the meshes
-        std::vector<Mesh> precomputated_meshes = resampled_meshes;
-        precomputeMeshes(precomputated_meshes);
-        //analyseDatabase(precomputated_meshes);
+        precomputeMeshes(meshes);
+        //analyseDatabase(meshes);
 
         // Normalization --> remeshing, translation, (rotation), (flipping), scaling
-        std::vector<Mesh> normalized_meshes = normalizeMeshes(precomputated_meshes);
+        normalizeMeshes(meshes);
+        //analyseDatabase(meshes);
 
         // Feature extraction for all meshes
-        std::vector<std::vector<double>> elem_desc = featureExtraction(normalized_meshes);
-        promptSaveFeatures(normalized_meshes, elem_desc);
+        std::vector<std::vector<double>> elem_desc;
+        featureExtraction(meshes, elem_desc);
+        
         promptNormOrStandard(elem_desc);
 
         // Prompt to save feature vectors to CSV
-        promptSaveFeatures(normalized_meshes, elem_desc);
+        promptSaveFeatures(meshes, elem_desc);
     }
     
-    //Histogram mode
+    // Histogram mode
     else if (application_mode == 3)
     {
         runHistogramMode();
     }
 
+    // Outlier mode
     else if (application_mode == 4) 
     {
         std::cout << "Reading .csv file..." << std::endl;
@@ -1303,6 +1386,7 @@ int main()
         renderObjects(outliers);
     }
 
+    // Querying mode
 	else if (application_mode == 5)
 	{
 		fs::path path = promptPathOrSelect();
@@ -1317,7 +1401,10 @@ int main()
 		
         auto queryFeatures = featureExtract(queryMesh);
         auto temp = queryFeatures;
-        FeatureData featureData = promptNormOrStandFeatures(queryFeatures);
+	    StandardizationData stdData = readStandardizationData(standardizationDataFilePath.string());
+	    standardizeWithData(queryFeatures, stdData);
+	    normalizeHistogram(queryFeatures);
+	    FeatureData featureData = readFeatures(fullFeaturesStandFilePath);
 	    
         int N = static_cast<int>(featureData.features.size());
         int D = (N > 0) ? static_cast<int>(featureData.features[0].size()) : 0;
@@ -1450,9 +1537,14 @@ int main()
         }
         else // Option 2: Linear / Brute-force search
         {
+            StandardizationData stdData = readStandardizationData(standardizationDataFilePath.string());
+            standardizeWithData(queryFeatures, stdData);
+            normalizeHistogram(queryFeatures);
+            FeatureData featureData = readFeatures(fullFeaturesStandFilePath);
+            saveWeights(computeWeightsFromDatabase(featureData.features));
+
             std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures, readWeights());
 
-            quicksort(distances, 1, 0, distances.size() - 1);
 
             std::cout << "Enter how many results: ";
             int k = 10;
@@ -1473,7 +1565,155 @@ int main()
 
             renderObjects(kbest);
         }
-	} else if (application_mode == 6)
+	} 
+    // Evaluation mode
+    else if (application_mode == 6)
+    {
+        std::cout << "Evaluating system..\n";
+        std::cout << "Enter evaluation metric (1-2483): \n";
+        int metric;
+        std::cin >> metric;
+
+        // Prepare database
+        auto database = readFeatures(fullFeaturesStandFilePath);
+        auto db_feats = database.features;
+        saveWeights(computeWeightsFromDatabase(database.features));
+
+        std::vector<std::pair<float, float>> plot_points;
+        std::vector<std::vector<std::pair<float, float>>> plot_points_per_class(69);
+
+        // k = number of items returned in the query
+        for (int k = 0; k <= 2483; k += metric)
+        {
+            int per = (((float)k) / 2483.0f) * 100.0f;
+            std::cout << "Evaluating k = " << k << " (" << per << "%)\n";
+
+            int current_class = 0;
+            int current_obj = 0;
+
+            float total_tp = 0, total_fp = 0, total_fn = 0, total_tn = 0;
+            float class_tp = 0, class_fp = 0, class_fn = 0, class_tn = 0;
+
+            // For each item in the database, match it against the entire database and calculate sens/spec
+            for (int i = 0; i <= db_feats.size(); i++)
+            {
+                // Onto new class, so save results of previous class
+                if (current_obj >= obj_counts[current_class])
+                {
+                    float sens_class = total_tp / (total_tp + total_fn);
+                    float spec_class = total_tn / (total_tn + total_fp);
+
+                    plot_points_per_class[current_class].push_back(std::make_pair(sens_class, spec_class));
+
+                    class_tp = 0;
+                    class_fp = 0;
+                    class_fn = 0;
+                    class_tn = 0;
+
+                    current_obj = 0;
+                    current_class++;
+
+                    if (i == db_feats.size()) break;
+                }
+
+                float tp = 0, fn = 0, fp = 0, tn = 0;
+
+                // Get distances from queried object to the entire database and sort it
+                auto distances = makeDistanceVector(db_feats, db_feats[i], readWeights());
+                quicksort(distances, 1, 0, distances.size() - 1);
+
+                auto query_label = database.labels[i];
+
+                // Get the k-best items based on the distances
+                for (int j = 0; j < k; j++)
+                {
+                    auto id = distances[j][0];
+                    auto obj_label = database.labels[id];
+
+                    // True positive if labels are identical, false positive otherwise
+                    if (query_label == obj_label)
+                        tp++;
+                    else fp++;
+                }
+
+                // Get number of objects in the class of the queried object
+                auto num_objects_query_class = obj_counts[current_class];
+                fn = num_objects_query_class - tp; // False negatives is the number of objects not returned in the query that are in the class of the queried object
+                tn = 2483 - tp - fp - fn; // 2483 items in the database, the true negatives are everything except the tps, fps and fns
+
+                total_tp += tp;
+                total_fp += fp;
+                total_fn += fn;
+                total_tn += tn;
+
+                class_tp += tp;
+                class_fp += fp;
+                class_fn += fn;
+                class_tn += tn;
+
+                current_obj++;
+            }
+
+            // Calculate sens and spec over the entire database for some value k
+            float sens = total_tp / (total_tp + total_fn);
+            float spec = total_tn / (total_tn + total_fp);
+
+            plot_points.push_back(std::make_pair(sens, spec));
+        }
+
+        // We can get area under curve by using the trapezoidal rule
+        // First, we calculate the area of the trapezoid between every two consecutive points
+        // Then, sum all trapezoid areas
+        float total_area = 0;
+        for (int i = 0; i < plot_points.size() - 1; i++)
+        {
+            auto& p1 = plot_points[i];
+            auto& p2 = plot_points[i + 1];
+
+            total_area += ((p1.second + p2.second) / 2) * (p2.first - p1.first);
+        }
+
+        std::vector<float> total_area_per_class;
+        for (int i = 0; i < plot_points_per_class.size(); i++)
+        {
+            auto& v = plot_points_per_class[i];
+            float total_area_class = 0;
+            for (int j = 0; j < v.size() - 1; j++)
+            {
+                auto& p1 = v[j];
+                auto& p2 = v[j + 1];
+
+                total_area_class += ((p1.second + p2.second) / 2) * (p2.first - p1.first);
+            }
+            total_area_per_class.push_back(total_area_class);
+        }
+
+        std::cout << "Evaluation score: " << total_area << "\n";
+
+        // Save to CSV
+        std::cout << "Save to CSV file? y/n:\n";
+        char c;
+        std::cin >> c;
+
+        if (c == 'y')
+        {
+            std::cout << "Enter filename:\n";
+            string filename;
+            std::cin >> filename;
+
+            if (filename.size() > 0)
+            {
+                exportEvaluationToCSV(plot_points, total_area, filename);
+                exportEvaluationPerClassToCSV(plot_points_per_class, total_area_per_class, database.labels, obj_counts, filename + "_per_class");
+            }
+                
+            else std::cout << "Cannot save to CSV file.\n";
+        }
+
+        std::cout << "Finished evaluation of system.\n";
+    }
+    // Projection mode
+    else if (application_mode == 7)
 	{
 		std::cout << "\n=== Mode 6: 2D t-SNE Projection & Scatterplot ===\n";
 		std::vector<double> dummy;

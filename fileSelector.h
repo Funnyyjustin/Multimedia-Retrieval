@@ -10,12 +10,14 @@
 
 namespace fs = std::filesystem;
 
-void makeidpathcsv() 
+std::vector<int> makeidpathcsv() 
 {
+    std::vector<int> counts;
+
     std::ofstream file(pathsFilePath);
 
     if (!file.is_open())
-        return;
+        return counts;
 
     file << "Paths\n";
 
@@ -23,12 +25,12 @@ void makeidpathcsv()
     if (!fs::exists(baseDir))
     {
         std::cerr << "Error: Map '" << baseDir.string() << "' does not exist.\n";
-        return;
+        return counts;
     }
     else if (!fs::is_directory(baseDir))
     {
         std::cerr << "Error: Map '" << baseDir.string() << "' is not a directory.\n";
-        return;
+        return counts;
     }
 
     // Get all subfolders
@@ -47,6 +49,7 @@ void makeidpathcsv()
     for (int i = 0; i < classes.size(); i++)
     {
         fs::path path = classes[i];
+        int count = 0;
         for (const auto& entry : fs::directory_iterator(path))
         {
             if (entry.is_regular_file())
@@ -56,12 +59,15 @@ void makeidpathcsv()
                 if (ext == ".obj" || ext == ".off")
                 {
                     file << entry.path().string() << "\n";
+                    count++;
                 }
             }
         }
+        counts.push_back(count);
     }
 
     file.close();
+    return counts;
 }
 
 std::vector<std::string> readPaths()
