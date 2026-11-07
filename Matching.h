@@ -169,7 +169,7 @@ inline double weightedDistance(const std::vector<double>& a,
 		total += w[g] * pow(d[g], p);
 	total = pow(total, 1.0 / p);
 
-	for (size_t g = numSingleFeatures; g < NUM_GROUPS; g++)
+	for (size_t g = NUM_SINGLE_GROUPS; g < NUM_GROUPS; g++)
 		total += w[g] * d[g];
 	return total;
 }

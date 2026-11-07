@@ -515,7 +515,6 @@ void resampleMeshes(std::vector<Mesh>& meshes, int minVert = minVertCount, int m
     }
 
     std::cout << "Finished resampling meshes.\n";
-    return meshes;
 }
 
 // Precomputation functions
@@ -1304,7 +1303,7 @@ void renderObjects(std::vector<int> ids)
 
 int main()
 {
-    makeidpathcsv();
+    std::vector<int> obj_counts = makeidpathcsv();
     paths = readPaths();
 
     omp_set_num_threads(omp_get_max_threads());
@@ -1537,14 +1536,11 @@ int main()
         }
         else // Option 2: Linear / Brute-force search
         {
-            StandardizationData stdData = readStandardizationData(standardizationDataFilePath.string());
-            standardizeWithData(queryFeatures, stdData);
-            normalizeHistogram(queryFeatures);
-            FeatureData featureData = readFeatures(fullFeaturesStandFilePath);
             saveWeights(computeWeightsFromDatabase(featureData.features));
 
             std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures, readWeights());
 
+            quicksort(distances, 1, 0, distances.size() - 1);
 
             std::cout << "Enter how many results: ";
             int k = 10;
@@ -1600,8 +1596,8 @@ int main()
                 // Onto new class, so save results of previous class
                 if (current_obj >= obj_counts[current_class])
                 {
-                    float sens_class = total_tp / (total_tp + total_fn);
-                    float spec_class = total_tn / (total_tn + total_fp);
+                    float sens_class = class_tp / (class_tp + class_fn);
+                    float spec_class = class_tn / (class_tn + class_fp);
 
                     plot_points_per_class[current_class].push_back(std::make_pair(sens_class, spec_class));
 
