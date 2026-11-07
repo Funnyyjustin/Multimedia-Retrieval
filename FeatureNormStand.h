@@ -93,6 +93,7 @@ void standardizeSingleFeatures(std::vector<std::vector<double>>& features)
 
 void normalizeHistogram(std::vector<double>& row)
 {
+	if (row.size() < numFeatures) return;
 	for (int i = 0; i < numHistograms; i++)
 	{
 		int startCol = numSingleFeatures + i * numHistogramBins;

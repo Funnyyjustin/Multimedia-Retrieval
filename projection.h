@@ -17,9 +17,9 @@ public:
         const std::vector<std::vector<double>>& features,
         const std::vector<std::string>& labels,
         const std::string& cachePath = "tsne_embedding.csv",
-        double perplexity = 30.0,
+        double perplexity = 50.0,
         double theta = 0.5,
-        int maxIter = 1000
+        int maxIter = 5000
     );
 
     // 2. Opens the interactive 2D scatterplot window with brushing
