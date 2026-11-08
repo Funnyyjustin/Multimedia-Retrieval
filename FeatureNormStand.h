@@ -215,7 +215,9 @@ NormalizationData readNormalizationData(const std::string& filename)
 
 void normalizeWithData(std::vector<double>& features, const NormalizationData& data)
 {
-	for (size_t i = 0; i < features.size(); ++i)
+	if (features.empty()) return;
+	size_t count = std::min({ features.size(), data.minValues.size(), data.maxValues.size() });
+	for (size_t i = 0; i < count; ++i)
 	{
 		if (data.maxValues[i] - data.minValues[i] > 1e-9) // Avoid division by zero
 		{
@@ -233,7 +235,9 @@ void normalizeWithData(std::vector<double>& features, const NormalizationData& d
 
 void standardizeWithData(std::vector<double>& features, const StandardizationData& data)
 {
-	for (size_t i = 0; i < numSingleFeatures; ++i)
+	if (features.empty()) return;
+	size_t count = std::min({ features.size(), (size_t)numSingleFeatures, data.means.size(), data.stddevs.size() });
+	for (size_t i = 0; i < count; ++i)
 	{
 		if (data.stddevs[i] > 1e-9) // Avoid division by zero
 			features[i] = (features[i] - data.means[i]) / data.stddevs[i];

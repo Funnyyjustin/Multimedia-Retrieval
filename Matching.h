@@ -77,15 +77,21 @@ FeatureData promptNormOrStandFeatures(std::vector<double>& queryFeatures)
 
 	if (choice == 1)
 	{
-		NormalizationData normData = readNormalizationData(normalizationDataFilePath.string());
-		normalizeWithData(queryFeatures, normData);
+		if (!queryFeatures.empty())
+		{
+			NormalizationData normData = readNormalizationData(normalizationDataFilePath.string());
+			normalizeWithData(queryFeatures, normData);
+		}
 		return readFeatures(fullFeaturesNormFilePath);
 	}
 	else if (choice == 2)
 	{
-		StandardizationData stdData = readStandardizationData(standardizationDataFilePath.string());
-		standardizeWithData(queryFeatures, stdData);
-		normalizeHistogram(queryFeatures);
+		if (!queryFeatures.empty())
+		{
+			StandardizationData stdData = readStandardizationData(standardizationDataFilePath.string());
+			standardizeWithData(queryFeatures, stdData);
+			normalizeHistogram(queryFeatures);
+		}
 		return readFeatures(fullFeaturesStandFilePath);
 	}
 	else
