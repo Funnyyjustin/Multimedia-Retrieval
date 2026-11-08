@@ -143,10 +143,12 @@ inline std::array<double, NUM_GROUPS> groupDistances(
 {
 	std::array<double, NUM_GROUPS> d{};
 	d[0] = singleFeaturesEMD(a, b);                              // group 0: all single features
+	int minLen = static_cast<int>(std::min(a.size(), b.size()));
+	int histBins = (minLen > numSingleFeatures) ? (minLen - numSingleFeatures) / numHistograms : numHistogramBins;
 	for (int h = 0; h < numHistograms; h++)
 	{
-		int start = numSingleFeatures + h * numHistogramBins;
-		d[NUM_SINGLE_GROUPS + h] = histogramDistance(a, b, start, numHistogramBins);
+		int start = numSingleFeatures + h * histBins;
+		d[NUM_SINGLE_GROUPS + h] = histogramDistance(a, b, start, histBins);
 	}
 	return d;
 }
@@ -215,28 +217,32 @@ std::vector<std::vector<float>> makeDistanceVector(
 	return distances;
 }
 
-// Transform a 106D feature-vector to weighted Hellinger space for ANN
+// Transform a feature-vector to weighted Hellinger space for ANN
 inline std::vector<double> embedFeatureForANN(
 	const std::vector<double>& v,
 	const FeatureWeights& w)
 {
 	std::vector<double> emb(v.size(), 0.0);
 	// reduze extreme z-outliers and scale with w[0]
-	for (int i = 0; i <numSingleFeatures && i < v.size(); i++)
+	for (int i = 0; i < numSingleFeatures && i < static_cast<int>(v.size()); i++)
 	{
 		double clamped = std::clamp(v[i], -2.0, 4.0);
 		emb[i] = (w[0] / 4.0) * clamped;
 	}
 	
+	int histBins = (static_cast<int>(v.size()) > numSingleFeatures)
+		? (static_cast<int>(v.size()) - numSingleFeatures) / numHistograms
+		: numHistogramBins;
+
 	// group 1 till 5 Hellinger embedding (sqrt per histogram bin times weight)
 	for (int h = 0; h < numHistograms; h++)
 	{
-		int start = numSingleFeatures + h * numHistogramBins;
+		int start = numSingleFeatures + h * histBins;
 		double weight = w[NUM_SINGLE_GROUPS + h];
-		for (int b = 0; b < numHistogramBins; b++)
+		for (int b = 0; b < histBins; b++)
 		{
 			int idx = start + b;
-			if (idx < v.size())
+			if (idx < static_cast<int>(v.size()))
 			{
 				emb[idx] = weight * std::sqrt(std::max(v[idx], 0.0));
 			}

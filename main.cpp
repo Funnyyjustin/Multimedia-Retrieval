@@ -1600,19 +1600,109 @@ int main()
         std::cout << "Enter evaluation metric (1-2483): \n";
         int metric;
         std::cin >> metric;
+        if (metric < 1) metric = 1;
+
+        std::cout << "\n=== Select Evaluation Search Method ===\n";
+        std::cout << "1. ANN (Approximate Nearest Neighbors kd-tree)\n";
+        std::cout << "2. Linear / Brute-force Search (makeDistanceVector + quicksort)\n";
+        std::cout << "Enter choice (1 or 2): ";
+        int evalMethod = 2;
+        std::cin >> evalMethod;
 
         // Prepare database
         auto database = readFeatures(fullFeaturesStandFilePath);
-        auto db_feats = database.features;
-        saveWeights(computeWeightsFromDatabase(database.features));
+        auto& db_feats = database.features;
+        int N = static_cast<int>(db_feats.size());
+        int D = (N > 0) ? static_cast<int>(db_feats[0].size()) : 0;
+        if (N == 0 || D == 0)
+        {
+            std::cerr << "Error: No features found in database.\n";
+            return 0;
+        }
+
+        FeatureWeights weights = computeWeightsFromDatabase(db_feats);
+        saveWeights(weights);
+
+        // Precompute ranked neighbor indices (sorted closest -> furthest) for each query i
+        std::vector<std::vector<int>> ranked_indices(N, std::vector<int>(N));
+
+        if (evalMethod == 1)
+        {
+            double eps = 0.0;
+            std::cout << "Enter ANN epsilon (0.0 = exact kd-tree, e.g. 0.1 = approximate): ";
+            std::cin >> eps;
+
+            std::cout << "Building ANN kd-tree and ranking all " << N << " queries...\n";
+            ANNpointArray dataPts = annAllocPts(N, D);
+            for (int n = 0; n < N; n++)
+            {
+                std::vector<double> embededRow = embedFeatureForANN(db_feats[n], weights);
+                for (int d = 0; d < D; d++)
+                {
+                    dataPts[n][d] = embededRow[d];
+                }
+            }
+
+            ANNkd_tree* kdTree = new ANNkd_tree(dataPts, N, D);
+            ANNpoint queryPt = annAllocPt(D);
+            ANNidxArray nnIdx = new ANNidx[N];
+            ANNdistArray dists = new ANNdist[N];
+
+            for (int i = 0; i < N; i++)
+            {
+                std::vector<double> embededQuery = embedFeatureForANN(db_feats[i], weights);
+                for (int d = 0; d < D; d++)
+                {
+                    queryPt[d] = embededQuery[d];
+                }
+
+                kdTree->annkSearch(queryPt, N, nnIdx, dists, eps);
+                for (int j = 0; j < N; j++)
+                {
+                    ranked_indices[i][j] = (nnIdx[j] != ANN_NULL_IDX && nnIdx[j] >= 0 && nnIdx[j] < N) ? nnIdx[j] : j;
+                }
+            }
+
+            delete[] nnIdx;
+            delete[] dists;
+            delete kdTree;
+            annDeallocPts(dataPts);
+            annDeallocPt(queryPt);
+            annClose();
+        }
+        else
+        {
+            std::cout << "Ranking all " << N << " queries using Linear Search + Quicksort in parallel...\n";
+            #pragma omp parallel for schedule(static)
+            for (int i = 0; i < N; i++)
+            {
+                auto distances = makeDistanceVector(db_feats, db_feats[i], weights);
+                quicksort(distances, 1, 0, distances.size() - 1);
+                for (int j = 0; j < N; j++)
+                {
+                    ranked_indices[i][j] = static_cast<int>(distances[j][0]);
+                }
+            }
+        }
 
         std::vector<std::pair<float, float>> plot_points;
         std::vector<std::vector<std::pair<float, float>>> plot_points_per_class(69);
 
-        // k = number of items returned in the query
-        for (int k = 0; k <= 2483; k += metric)
+        // Build k steps (always include N as final point so ROC reaches Sensitivity = 1.0)
+        std::vector<int> k_steps;
+        for (int k = 0; k <= N; k += metric)
         {
-            int per = (((float)k) / 2483.0f) * 100.0f;
+            k_steps.push_back(k);
+        }
+        if (k_steps.empty() || k_steps.back() != N)
+        {
+            k_steps.push_back(N);
+        }
+
+        // k = number of items returned in the query
+        for (int k : k_steps)
+        {
+            int per = (((float)k) / (float)N) * 100.0f;
             std::cout << "Evaluating k = " << k << " (" << per << "%)\n";
 
             int current_class = 0;
@@ -1622,7 +1712,7 @@ int main()
             float class_tp = 0, class_fp = 0, class_fn = 0, class_tn = 0;
 
             // For each item in the database, match it against the entire database and calculate sens/spec
-            for (int i = 0; i <= db_feats.size(); i++)
+            for (int i = 0; i <= N; i++)
             {
                 // Onto new class, so save results of previous class
                 if (current_obj >= obj_counts[current_class])
@@ -1640,22 +1730,18 @@ int main()
                     current_obj = 0;
                     current_class++;
 
-                    if (i == db_feats.size()) break;
+                    if (i == N) break;
                 }
 
                 float tp = 0, fn = 0, fp = 0, tn = 0;
 
-                // Get distances from queried object to the entire database and sort it
-                auto distances = makeDistanceVector(db_feats, db_feats[i], readWeights());
-                quicksort(distances, 1, 0, distances.size() - 1);
+                const auto& query_label = database.labels[i];
 
-                auto query_label = database.labels[i];
-
-                // Get the k-best items based on the distances
+                // Get the k-best items based on the precomputed ranking
                 for (int j = 0; j < k; j++)
                 {
-                    auto id = distances[j][0];
-                    auto obj_label = database.labels[id];
+                    int id = ranked_indices[i][j];
+                    const auto& obj_label = database.labels[id];
 
                     // True positive if labels are identical, false positive otherwise
                     if (query_label == obj_label)
@@ -1666,7 +1752,7 @@ int main()
                 // Get number of objects in the class of the queried object
                 auto num_objects_query_class = obj_counts[current_class];
                 fn = num_objects_query_class - tp; // False negatives is the number of objects not returned in the query that are in the class of the queried object
-                tn = 2483 - tp - fp - fn; // 2483 items in the database, the true negatives are everything except the tps, fps and fns
+                tn = N - tp - fp - fn; // True negatives are everything except the tps, fps and fns
 
                 total_tp += tp;
                 total_fp += fp;
