@@ -841,6 +841,8 @@ public:
         } else if (!queryResults.empty()) {
             compareShapeId = queryResults[0].shapeId;
         }
+
+        preloadThumbnails();
     }
 
     static void uploadMeshToGL(Mesh& m, GLMeshEntry& entry) {
@@ -865,12 +867,66 @@ public:
         entry.barycenter = m.barycenter;
     }
 
+    void preloadThumbnails() {
+        std::vector<int> neededIds;
+        if (normMeshCache.find(selectedShapeId) == normMeshCache.end()) {
+            neededIds.push_back(selectedShapeId);
+        }
+        int numThumbs = std::min((int)queryResults.size(), MAX_THUMB_FBOS);
+        for (int i = 0; i < numThumbs; ++i) {
+            int sid = queryResults[i].shapeId;
+            if (normMeshCache.find(sid) == normMeshCache.end()) {
+                if (std::find(neededIds.begin(), neededIds.end(), sid) == neededIds.end()) {
+                    neededIds.push_back(sid);
+                }
+            }
+        }
+        if (neededIds.empty()) return;
+
+        // Ensure cache capacity
+        while (normMeshCache.size() + neededIds.size() > 512 && !normMeshCache.empty()) {
+            auto first = normMeshCache.begin();
+            if (first->second.vao) glDeleteVertexArrays(1, &first->second.vao);
+            if (first->second.vbo) glDeleteBuffers(1, &first->second.vbo);
+            normMeshCache.erase(first);
+        }
+
+        std::vector<Mesh> loadedMeshes(neededIds.size());
+        #pragma omp parallel for schedule(dynamic)
+        for (int i = 0; i < (int)neededIds.size(); ++i) {
+            int sid = neededIds[i];
+            if (sid >= 0 && sid < (int)shapes.size()) {
+                Parser p;
+                loadedMeshes[i] = p.parseOFF(shapes[sid].path);
+                loadedMeshes[i].setLabel(shapes[sid].className);
+                precomputeMesh(loadedMeshes[i]);
+                calculateAABB(loadedMeshes[i]);
+                normalizeMesh(loadedMeshes[i]);
+            }
+        }
+
+        // Upload to OpenGL on main thread
+        for (int i = 0; i < (int)neededIds.size(); ++i) {
+            int sid = neededIds[i];
+            GLMeshEntry entry;
+            uploadMeshToGL(loadedMeshes[i], entry);
+            normMeshCache[sid] = entry;
+            if (sid == selectedShapeId && labLoadedShapeId != selectedShapeId) {
+                labMesh = loadedMeshes[i];
+                labMeshGL = entry;
+                labLoadedShapeId = selectedShapeId;
+                labIsNormalized = true;
+                labStatusText = "Fully Normalized (Centered + PCA Aligned + Flipped + Unit Scaled)";
+            }
+        }
+    }
+
     const GLMeshEntry& getOrLoadNormMesh(int shapeId) {
         auto it = normMeshCache.find(shapeId);
         if (it != normMeshCache.end()) return it->second;
 
-        // Limit cache size to 64 meshes to keep GPU memory bounded
-        if (normMeshCache.size() >= 64) {
+        // Limit cache size to 512 meshes to keep GPU memory bounded
+        if (normMeshCache.size() >= 512) {
             auto first = normMeshCache.begin();
             if (first->second.vao) glDeleteVertexArrays(1, &first->second.vao);
             if (first->second.vbo) glDeleteBuffers(1, &first->second.vbo);
