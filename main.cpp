@@ -578,18 +578,30 @@ Point3 calculateBarycenter(Mesh& input)
 
 double calculateVolume(Mesh& input)
 {
-    double volume = 0.0;
+    double signedVolume = 0.0;
+    double absVolume = 0.0;
 
     for (const auto& f : input.faces)
     {
+        if (f.v.size() < 3) continue;
+
         const Vec3& a = input.vertices[f.v[0]] - input.barycenter;
         const Vec3& b = input.vertices[f.v[1]] - input.barycenter;
         const Vec3& c = input.vertices[f.v[2]] - input.barycenter;
 
-        volume += dot(a, cross(b, c)) / 6.0;
+        double tetVol = dot(a, cross(b, c)) / 6.0;
+        signedVolume += tetVol;
+        absVolume += std::abs(tetVol);
     }
 
-    return std::abs(volume);
+    double vol = std::abs(signedVolume);
+
+    if (vol <= 1e-6 && absVolume > 1e-6)
+    {
+        vol = 0.5 * absVolume;
+    }
+
+    return vol;
 }
 
 void precomputeMesh(Mesh& input)
@@ -1422,21 +1434,33 @@ int main()
 
         if (searchMethod == 1)
         {
+            FeatureWeights weights = readWeights();
+            double weightSum = 0.0;
+            for (double wVal : weights) weightSum += wVal;
+            if (weightSum < 1e-9)
+            {
+                weights = computeWeightsFromDatabase(featureData.features);
+                saveWeights(weights);
+            }
+            
             ANNpointArray dataPts = annAllocPts(N, D);
             for (int n = 0; n < N; n++)
             {
+                std::vector<double> embededRow = embedFeatureForANN(featureData.features[n], weights);
                 for (int d = 0; d < D; d++)
                 {
-                    dataPts[n][d] = featureData.features[n][d];
+                    dataPts[n][d] = embededRow[d];
                 }
             }
 
             ANNkd_tree* kdTree = new ANNkd_tree(dataPts, N, D);
+            
+            std::vector<double> embededQuery = embedFeatureForANN(queryFeatures, weights);
 
             ANNpoint queryPt = annAllocPt(D);
             for (int d = 0; d < D; d++)
             {
-                queryPt[d] = queryFeatures[d];
+                queryPt[d] = embededQuery[d];
             }
 
             std::cout << "\nSelect ANN search type:\n";

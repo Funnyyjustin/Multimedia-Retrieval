@@ -103,10 +103,17 @@ double calculateConvexity(Mesh& mesh)
         }
     }
 
-    // 3. execut qhull directly from the qhull/bin map (redirect stderr to nul)
-    std::string cmd = "qhull\\bin\\qhull.exe TI " + inFileName + " QJ FS TO " + outFileName + " 2> nul";
+    // 3. search quickhull and execut qhull directly from the qhull/bin map (redirect stderr to nul)
+    std::string qhullExe = "qhull.exe";
+    if (!std::filesystem::exists(qhullExe) && std::filesystem::exists("qhull\\bin\\qhull.exe"))
+    {
+        qhullExe = "qhull\\bin\\qhull.exe";
+    }
+
+    std::string cmd = qhullExe + " TI " + inFileName + " QJ FS TO " + outFileName + " 2> nul";
     int ret = system(cmd.c_str());
 
+    double hullArea = 0.0;
     double hullVolume = 0.0;
     if (ret == 0)
     {
@@ -115,11 +122,7 @@ double calculateConvexity(Mesh& mesh)
         if (fi.is_open())
         {
             int dummy1 = 0, dummy2 = 0;
-            double hullArea = 0.0;
-            if (fi >> dummy1 >> dummy2 >> hullArea >> hullVolume)
-            {
-                // read successfully
-            }
+            fi >> dummy1 >> dummy2 >> hullArea >> hullVolume;
         }
     }
 
@@ -133,7 +136,19 @@ double calculateConvexity(Mesh& mesh)
         return 0.0;
     }
 
-    double convexity = mesh.volume / hullVolume;
+    // use fallback if volume is 0 or nan
+    double effectiveVolume = mesh.volume;
+    if (effectiveVolume <= 1e-6 || std::isnan(effectiveVolume))
+    {
+        // Schat volume uit de verhouding van oppervlaktes of een dunne schil
+        if (hullArea > 1e-9)
+        {
+            double ratio = std::clamp(mesh.area / hullArea, 0.0, 1.0);
+            effectiveVolume = hullVolume * std::pow(ratio, 1.5);
+        }
+    }
+    
+    double convexity = effectiveVolume / hullVolume;
     return std::clamp(convexity, 0.0, 1.0);
 }
 

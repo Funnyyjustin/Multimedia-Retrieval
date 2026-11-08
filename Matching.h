@@ -201,8 +201,6 @@ inline FeatureWeights computeWeightsFromDatabase(
 
 // Distance functions
 
-
-
 std::vector<std::vector<float>> makeDistanceVector(
 	const std::vector<std::vector<double>>& features,
 	const std::vector<double>& query,
@@ -217,6 +215,36 @@ std::vector<std::vector<float>> makeDistanceVector(
 	return distances;
 }
 
+// Transform a 106D feature-vector to weighted Hellinger space for ANN
+inline std::vector<double> embedFeatureForANN(
+	const std::vector<double>& v,
+	const FeatureWeights& w)
+{
+	std::vector<double> emb(v.size(), 0.0);
+	// reduze extreme z-outliers and scale with w[0]
+	for (int i = 0; i <numSingleFeatures && i < v.size(); i++)
+	{
+		double clamped = std::clamp(v[i], -2.0, 4.0);
+		emb[i] = (w[0] / 4.0) * clamped;
+	}
+	
+	// group 1 till 5 Hellinger embedding (sqrt per histogram bin times weight)
+	for (int h = 0; h < numHistograms; h++)
+	{
+		int start = numSingleFeatures + h * numHistogramBins;
+		double weight = w[NUM_SINGLE_GROUPS + h];
+		for (int b = 0; b < numHistogramBins; b++)
+		{
+			int idx = start + b;
+			if (idx < v.size())
+			{
+				emb[idx] = weight * std::sqrt(std::max(v[idx], 0.0));
+			}
+		}
+	}
+	
+	return emb;
+}
 
 
 // Redundant
@@ -243,3 +271,6 @@ std::vector<std::vector<float>> makeDistanceVector(const std::vector<std::vector
 
 	return distances;
 }
+
+
+//
