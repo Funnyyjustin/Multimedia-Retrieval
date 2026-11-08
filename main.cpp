@@ -225,11 +225,11 @@ void exportFeaturesToCSV(const std::vector<Mesh>& meshes, const std::vector<std:
     if (features[0].size() == 106)
     {
         file << ";Surface Area;Compactness;Rectangularity;Diameter;Convexity;Eccentricity";
-        for (int i = 0; i < 20; ++i) file << ";A3_" << i;
-        for (int i = 0; i < 20; ++i) file << ";D1_" << i;
-        for (int i = 0; i < 20; ++i) file << ";D2_" << i;
-        for (int i = 0; i < 20; ++i) file << ";D3_" << i;
-        for (int i = 0; i < 20; ++i) file << ";D4_" << i;
+        for (int i = 0; i < numHistogramBins; ++i) file << ";A3_" << i;
+        for (int i = 0; i < numHistogramBins; ++i) file << ";D1_" << i;
+        for (int i = 0; i < numHistogramBins; ++i) file << ";D2_" << i;
+        for (int i = 0; i < numHistogramBins; ++i) file << ";D3_" << i;
+        for (int i = 0; i < numHistogramBins; ++i) file << ";D4_" << i;
     }
     else
     {

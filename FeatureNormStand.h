@@ -9,10 +9,6 @@
 #include <algorithm>
 #include "globals.h"
 
-const int numSingleFeatures = 6;
-const int numHistograms = 5;
-const int numHistogramBins = 20;
-const int numFeatures = numSingleFeatures + numHistograms * numHistogramBins;
 constexpr size_t NUM_SINGLE_GROUPS = 1;
 constexpr size_t NUM_GROUPS = NUM_SINGLE_GROUPS + numHistograms;   // 1 + 5 = 6
 constexpr double SINGLE_MASS_SHIFT = 3.0;

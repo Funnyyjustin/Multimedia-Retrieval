@@ -11,11 +11,13 @@
 #include <cstdio>
 #include <cmath>
 
+#include "globals.h"
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-const size_t NUM_BINS = 20;
+const size_t NUM_BINS = static_cast<size_t>(numHistogramBins);
 
 double calculateVolumeAABB(Mesh& mesh)
 {
@@ -253,7 +255,7 @@ std::vector<double> calculateBarycenterDist(const std::vector<Point3>& pts, cons
     for (const auto& p : pts) {
         vals.push_back((p - barycenter).length());
     }
-    return computeFixedHistogram(vals, NUM_BINS, 0.0, 0.90);
+    return computeFixedHistogram(vals, NUM_BINS, 0.0, 0.85); // was 0.90
 }
 
 std::vector<double> calculateVerticesDist(const std::vector<Point3>& pts) // D2
@@ -264,7 +266,7 @@ std::vector<double> calculateVerticesDist(const std::vector<Point3>& pts) // D2
     for (size_t i = 0; i < numPairs; ++i) {
         vals.push_back(evalD2(&pts[2 * i]));
     }
-    return computeFixedHistogram(vals, NUM_BINS, 0.0, 1.75);
+    return computeFixedHistogram(vals, NUM_BINS, 0.0, 1.45); // was 1.45
 }
 
 std::vector<double> calculateAngle(const std::vector<Point3>& pts) // A3
@@ -286,7 +288,7 @@ std::vector<double> calculateRootArea(const std::vector<Point3>& pts) // D3
     for (size_t i = 0; i < numTriplets; ++i) {
         vals.push_back(evalD3(&pts[3 * i]));
     }
-    return computeFixedHistogram(vals, NUM_BINS, 0.0, 0.75);
+    return computeFixedHistogram(vals, NUM_BINS, 0.0, 0.60); // was 0.75
 }
 
 std::vector<double> calculateRootVolume(const std::vector<Point3>& pts) // D4
@@ -297,7 +299,7 @@ std::vector<double> calculateRootVolume(const std::vector<Point3>& pts) // D4
     for (size_t i = 0; i < numQuads; ++i) {
         vals.push_back(evalD4(&pts[4 * i]));
     }
-    return computeFixedHistogram(vals, NUM_BINS, 0.0, 0.60);
+    return computeFixedHistogram(vals, NUM_BINS, 0.0, 0.45); // was 0.60
 }
 
 std::vector<double> featureExtract(Mesh& mesh)

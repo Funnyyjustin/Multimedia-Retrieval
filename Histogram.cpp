@@ -1,6 +1,7 @@
 #include "Histogram.h"
 #include "pbPlot/pbPlots.hpp"
 #include "pbPlot/supportLib.hpp"
+#include "globals.h"
 
 #include <fstream>
 #include <sstream>
@@ -29,13 +30,13 @@ static HistogramFeatureInfo getHistogramFeatureInfo(const std::string& feature) 
     if (feature == "A3") {
         return { 0.0, M_PI, L"Angle (radians) [0 - PI]", "Angle between 3 random points" };
     } else if (feature == "D1") {
-        return { 0.0, 0.90, L"Distance to Barycenter [0 - 0.90]", "Distance from barycenter to random point" };
+        return { 0.0, 0.90, L"Distance to Barycenter [0 - 0.85]", "Distance from barycenter to random point" };
     } else if (feature == "D2") {
-        return { 0.0, 1.75, L"Distance between 2 Points [0 - 1.75]", "Distance between 2 random points" };
+        return { 0.0, 1.75, L"Distance between 2 Points [0 - 1.45]", "Distance between 2 random points" };
     } else if (feature == "D3") {
-        return { 0.0, 0.75, L"Square Root of Area [0 - 0.75]", "Square root of triangle area" };
+        return { 0.0, 0.75, L"Square Root of Area [0 - 0.60]", "Square root of triangle area" };
     } else if (feature == "D4") {
-        return { 0.0, 0.60, L"Cube Root of Volume [0 - 0.60]", "Cube root of tetrahedron volume" };
+        return { 0.0, 0.60, L"Cube Root of Volume [0 - 0.45]", "Cube root of tetrahedron volume" };
     }
     return { 0.0, 1.0, L"Feature Value", "" };
 }
@@ -309,18 +310,19 @@ FeatureDatabase parseFeatureCSV(const std::string& filepath) {
         }
 
         for (const auto& hName : db.histogramFeatureNames) {
-            shape.histograms[hName] = std::vector<double>(20, 0.0);
+            shape.histograms[hName] = std::vector<double>(numHistogramBins, 0.0);
         }
-
+        
         for (const auto& pair : histCols) {
             size_t colIdx = pair.first;
             if (colIdx < cells.size() && !cells[colIdx].empty()) {
                 try {
                     double val = std::stod(cells[colIdx]);
                     const auto& hc = pair.second;
-                    if (hc.binIndex < shape.histograms[hc.featureName].size()) {
-                        shape.histograms[hc.featureName][hc.binIndex] = val;
+                    if (hc.binIndex >= shape.histograms[hc.featureName].size()) {
+                        shape.histograms[hc.featureName].resize(hc.binIndex + 1, 0.0);
                     }
+                    shape.histograms[hc.featureName][hc.binIndex] = val;
                 } catch (...) {}
             }
         }
@@ -615,7 +617,14 @@ bool exportClassHistogramLinePlot(
     }
 
     HistogramFeatureInfo info = getHistogramFeatureInfo(featureName);
-    const size_t numBins = 20;
+    size_t numBins = numHistogramBins;
+    for (const auto& s : shapes) {
+        auto it = s.histograms.find(featureName);
+        if (it != s.histograms.end() && !it->second.empty()) {
+            numBins = it->second.size();
+            break;
+        }
+    }
     double binWidth = (info.maxVal - info.minVal) / static_cast<double>(numBins);
 
     // Compute bin centers in physical domain
