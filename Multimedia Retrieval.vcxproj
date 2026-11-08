@@ -71,11 +71,11 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>deps\GLFW\include;deps\include;deps\lib;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <IncludePath>deps\imgui;deps\GLFW\include;deps\include;deps\lib;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
     <LibraryPath>deps\GLFW\build\src\Debug;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>deps\GLFW\include;deps\include;deps\lib;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <IncludePath>deps\imgui;deps\GLFW\include;deps\include;deps\lib;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
     <LibraryPath>deps\GLFW\build\src\Debug;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -149,6 +149,12 @@
     <ClCompile Include="ann\kd_tree.cpp" />
     <ClCompile Include="ann\kd_util.cpp" />
     <ClCompile Include="ann\perf.cpp" />
+    <ClCompile Include="deps\imgui\imgui.cpp" />
+    <ClCompile Include="deps\imgui\imgui_draw.cpp" />
+    <ClCompile Include="deps\imgui\imgui_impl_glfw.cpp" />
+    <ClCompile Include="deps\imgui\imgui_impl_opengl3.cpp" />
+    <ClCompile Include="deps\imgui\imgui_tables.cpp" />
+    <ClCompile Include="deps\imgui\imgui_widgets.cpp" />
     <ClCompile Include="Features.cpp" />
     <ClCompile Include="glad.c" />
     <ClCompile Include="Histogram.cpp" />
@@ -189,6 +195,7 @@
     <ClInclude Include="resampling.h" />
     <ClInclude Include="tsne\sptree.h" />
     <ClInclude Include="tsne\tsne.h" />
+    <ClInclude Include="ui.h" />
     <ClInclude Include="vec3.h" />
   </ItemGroup>
   <ItemGroup>
