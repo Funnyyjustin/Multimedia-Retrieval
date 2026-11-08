@@ -1316,6 +1316,20 @@ void renderObjects(std::vector<int> ids)
 
 int main(int argc, char* argv[])
 {
+    // If launched directly from x64\Debug or x64\Release, auto-set working directory to the project root
+    if (argc > 0 && argv[0]) {
+        try {
+            fs::path exeDir = fs::absolute(argv[0]).parent_path();
+            if (fs::exists(exeDir / "ObjectFiles")) {
+                fs::current_path(exeDir);
+            } else if (fs::exists(exeDir.parent_path() / "ObjectFiles")) {
+                fs::current_path(exeDir.parent_path());
+            } else if (fs::exists(exeDir.parent_path().parent_path() / "ObjectFiles")) {
+                fs::current_path(exeDir.parent_path().parent_path());
+            }
+        } catch (...) {}
+    }
+
     std::vector<int> obj_counts = makeidpathcsv();
     paths = readPaths();
 

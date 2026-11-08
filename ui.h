@@ -315,9 +315,9 @@ public:
         selectedClassIdx = defaultClass;
         if (!classes.empty() && !classes[selectedClassIdx].shapeIds.empty()) {
             selectedShapeId = classes[selectedClassIdx].shapeIds[0];
+            loadLabMesh(selectedShapeId, true);
+            runQuery();
         }
-        loadLabMesh(selectedShapeId, true);
-        runQuery();
 
         auto t1 = std::chrono::high_resolution_clock::now();
         startupLoadTimeMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -1298,6 +1298,11 @@ public:
     // TAB 1: 3D QUERY & RETRIEVAL STUDIO (MODE 5)
     // ========================================================================
     void drawTabQueryStudio() {
+        if (shapes.empty() || selectedShapeId < 0 || selectedShapeId >= (int)shapes.size()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "No shapes loaded in database. Please check working directory.");
+            return;
+        }
+
         const auto& qShape = shapes[selectedShapeId];
         const auto& qMeshGL = getOrLoadNormMesh(selectedShapeId);
 
