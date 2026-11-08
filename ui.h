@@ -270,12 +270,30 @@ public:
     int tsneFilterMode = 0; // 0 = All classes, 1 = Selected Class Only, 2 = Query & Top-K Neighbors
     int tsneHoveredShapeId = -1;
 
+    // Sidebar Class Browser state
+    int classSortMode = 0;          // 0 = Alphabetical (Name), 1 = AUC
+    bool classSortAscending = true; // For Name: true=A-Z, false=Z-A; For AUC: false=High-Low, true=Low-High
+
+    static ImVec4 getAucColor(float auc) {
+        if (auc >= 0.90f) {
+            return ImVec4(0.25f, 0.95f, 0.40f, 1.0f); // Bright Emerald Green (Excellent >= 0.90)
+        } else if (auc >= 0.80f) {
+            return ImVec4(0.55f, 0.92f, 0.35f, 1.0f); // Lime Green (Good >= 0.80)
+        } else if (auc >= 0.70f) {
+            return ImVec4(0.98f, 0.85f, 0.25f, 1.0f); // Bright Yellow / Amber (Moderate >= 0.70)
+        } else if (auc >= 0.60f) {
+            return ImVec4(1.00f, 0.55f, 0.25f, 1.0f); // Orange (Fair >= 0.60)
+        } else {
+            return ImVec4(0.95f, 0.35f, 0.35f, 1.0f); // Coral Red (Poor < 0.60)
+        }
+    }
+
     // Tab 5 (Evaluation) state
     bool showEvalStd = true;
     bool showEvalImp = true;
     bool showEvalAnn = true;
     bool showEvalSelectedClass = true;
-    bool plotStandardROC = true; // true = Sens vs (1 - Spec), false = Sens vs Spec
+    bool plotStandardROC = false; // default = false: Specificity (TNR, CSV Plot), true = 1 - Specificity
 
     // Startup timing
     double startupLoadTimeMs = 0.0;
@@ -1074,13 +1092,14 @@ public:
     // LEFT SIDEBAR: DEMO PRESETS & DATABASE BROWSER
     // ========================================================================
     void drawSidebar() {
-        ImGui::BeginChild("LeftSidebar", ImVec2(300, 0), true);
+        ImGui::BeginChild("LeftSidebar", ImVec2(325.0f, 0), true);
 
         ImGui::TextColored(ImVec4(0.35f, 0.85f, 1.0f, 1.0f), "DEMO SHORTCUTS & PRESETS");
         ImGui::TextDisabled("1-Click presentation scenarios:");
 
+        float btnW = (ImGui::GetContentRegionAvail().x - 8.0f) * 0.5f;
         auto presetBtn = [&](const char* label, const char* cName, int offset = 0) {
-            if (ImGui::Button(label, ImVec2(138, 0))) {
+            if (ImGui::Button(label, ImVec2(btnW, 0))) {
                 if (classToIndex.count(cName)) {
                     int cIdx = classToIndex[cName];
                     if (!classes[cIdx].shapeIds.empty()) {
@@ -1101,11 +1120,11 @@ public:
         presetBtn("Guitar", "Guitar", 0);
 
         if (!outlierHighVerts.empty() && !outlierLowVerts.empty()) {
-            if (ImGui::Button("Max Verts Outlier", ImVec2(138, 0))) {
+            if (ImGui::Button("Max Verts Outlier", ImVec2(btnW, 0))) {
                 selectShape(outlierHighVerts[0]);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Average Shape", ImVec2(138, 0))) {
+            if (ImGui::Button("Average Shape", ImVec2(btnW, 0))) {
                 selectShape(outlierLowVerts[0]);
             }
         }
@@ -1115,22 +1134,82 @@ public:
         ImGui::SetNextItemWidth(-1);
         ImGui::InputTextWithHint("##ClassFilter", "Filter classes (e.g. Car, Mug)...", classFilterBuf, sizeof(classFilterBuf));
 
+        // Sorting Controls Bar
+        ImGui::Text("Sort:");
+        ImGui::SameLine();
+        bool isSortName = (classSortMode == 0);
+        bool isSortAuc = (classSortMode == 1);
+
+        if (isSortName) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.75f, 1.0f));
+        if (ImGui::SmallButton("Name")) {
+            if (classSortMode == 0) {
+                classSortAscending = !classSortAscending;
+            } else {
+                classSortMode = 0;
+                classSortAscending = true; // default A-Z
+            }
+        }
+        if (isSortName) ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sort alphabetically by class name (click again to reverse)");
+
+        ImGui::SameLine();
+        if (isSortAuc) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.75f, 1.0f));
+        if (ImGui::SmallButton("AUC")) {
+            if (classSortMode == 1) {
+                classSortAscending = !classSortAscending;
+            } else {
+                classSortMode = 1;
+                classSortAscending = false; // default High-to-Low for AUC
+            }
+        }
+        if (isSortAuc) ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sort by class retrieval AUC score (click again to reverse)");
+
+        ImGui::SameLine();
+        const char* dirIcon = "";
+        if (classSortMode == 0) {
+            dirIcon = classSortAscending ? "A->Z" : "Z->A";
+        } else {
+            dirIcon = classSortAscending ? "Low->High" : "High->Low";
+        }
+        if (ImGui::SmallButton(dirIcon)) {
+            classSortAscending = !classSortAscending;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click to toggle sorting direction (Ascending / Descending)");
+
         ImGui::Text("Classes (%d):", (int)classes.size());
         ImGui::BeginChild("ClassList", ImVec2(0, 230), true);
         std::string filterStr = classFilterBuf;
         std::transform(filterStr.begin(), filterStr.end(), filterStr.begin(), ::tolower);
 
-        for (int c = 0; c < (int)classes.size(); ++c) {
+        // Sort indices based on current criteria
+        std::vector<int> sortedClassIndices(classes.size());
+        for (size_t i = 0; i < classes.size(); ++i) sortedClassIndices[i] = static_cast<int>(i);
+
+        std::sort(sortedClassIndices.begin(), sortedClassIndices.end(), [&](int a, int b) {
+            if (classSortMode == 0) {
+                int cmp = classes[a].name.compare(classes[b].name);
+                return classSortAscending ? (cmp < 0) : (cmp > 0);
+            } else {
+                if (std::fabs(classes[a].aucStd - classes[b].aucStd) > 1e-4f) {
+                    return classSortAscending ? (classes[a].aucStd < classes[b].aucStd)
+                                              : (classes[a].aucStd > classes[b].aucStd);
+                }
+                return classes[a].name < classes[b].name;
+            }
+        });
+
+        for (int c : sortedClassIndices) {
             if (!filterStr.empty()) {
                 std::string lowerName = classes[c].name;
                 std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
                 if (lowerName.find(filterStr) == std::string::npos) continue;
             }
             char itemLabel[128];
-            std::snprintf(itemLabel, sizeof(itemLabel), "%s (%d) [AUC %.2f]",
+            std::snprintf(itemLabel, sizeof(itemLabel), "%s (%d)  [AUC %.2f]",
                 classes[c].name.c_str(), classes[c].count, classes[c].aucStd);
             bool isSel = (selectedClassIdx == c);
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(classes[c].color[0], classes[c].color[1], classes[c].color[2], 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, getAucColor(classes[c].aucStd));
             if (ImGui::Selectable(itemLabel, isSel)) {
                 selectedClassIdx = c;
                 if (!classes[c].shapeIds.empty()) {
@@ -1195,12 +1274,15 @@ public:
             ImGui::SameLine();
             if (ImGui::RadioButton("Radius Search (R)", annSearchType == 1)) { annSearchType = 1; changed = true; }
             if (annSearchType == 1) {
+                ImGui::SetNextItemWidth(150.0f);
                 changed |= ImGui::SliderFloat("Search Radius R", &queryRadius, 0.05f, 1.0f, "%.3f");
             }
+            ImGui::SetNextItemWidth(150.0f);
             changed |= ImGui::SliderFloat("ANN Epsilon (0 = exact)", &annEpsilon, 0.0f, 1.0f, "%.2f");
         }
 
         if (searchMethod == 0 || annSearchType == 0) {
+            ImGui::SetNextItemWidth(150.0f);
             changed |= ImGui::SliderInt("Result Count (K)", &queryK, 1, 20);
         }
 
@@ -1216,6 +1298,7 @@ public:
             bool wChanged = false;
             for (size_t g = 0; g < NUM_GROUPS; ++g) {
                 float wVal = static_cast<float>(activeWeights[g]);
+                ImGui::SetNextItemWidth(140.0f);
                 if (ImGui::SliderFloat(gNames[g], &wVal, 0.0f, 1.0f, "%.3f")) {
                     activeWeights[g] = wVal;
                     wChanged = true;
@@ -1260,7 +1343,7 @@ public:
         float precExcl = (denomExclSelf == 0) ? 0.0f : (100.0f * sameClassExclSelf / denomExclSelf);
 
         // Top-Right Live Query Performance & Analytics Dashboard Banner (Utilizes top-right space)
-        ImGui::BeginChild("QueryAnalyticsBanner", ImVec2(0, 72.0f), true);
+        ImGui::BeginChild("QueryAnalyticsBanner", ImVec2(0, 78.0f), true);
         ImGui::Columns(4, "QueryMetricsCols", false);
 
         // Metric 1: Precision@K
@@ -1271,25 +1354,25 @@ public:
 
         // Metric 2: Search Latency & Engine
         ImGui::NextColumn();
-        ImGui::TextDisabled("SEARCH LATENCY & ENGINE");
+        ImGui::TextDisabled("SEARCH LATENCY");
         ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "%.3f ms", lastQueryTimeMs);
         ImGui::TextDisabled("%s", searchMethod == 0 ? "Linear Scan (EMD+L2)" : "ANN kd-Tree (Hellinger)");
 
         // Metric 3: Active Query Profile
         ImGui::NextColumn();
-        ImGui::TextDisabled("ACTIVE QUERY PROFILE");
+        ImGui::TextDisabled("QUERY PROFILE");
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.35f, 1.0f), "#%d: %s", qShape.id, qShape.className.c_str());
         ImGui::TextDisabled("%d verts | %d faces", qShape.origVerts, qShape.origFaces);
 
         // Metric 4: Distance Spread
         ImGui::NextColumn();
-        ImGui::TextDisabled("TOP-K DISTANCE SPREAD");
+        ImGui::TextDisabled("DISTANCE SPREAD");
         if (!queryResults.empty()) {
-            ImGui::Text("Best: %.4f | Worst: %.4f", queryResults.front().totalDist, queryResults.back().totalDist);
+            ImGui::Text("%.4f - %.4f", queryResults.front().totalDist, queryResults.back().totalDist);
         } else {
             ImGui::Text("No results");
         }
-        ImGui::TextDisabled("Excl. self precision: %.1f%%", precExcl);
+        ImGui::TextDisabled("Excl. self P: %.1f%%", precExcl);
 
         ImGui::Columns(1);
         ImGui::EndChild();
@@ -1402,12 +1485,11 @@ public:
         float targetMin = -1.0f, float targetMax = -1.0f,
         float targetLine = -1.0f)
     {
-        ImGui::BeginChild(id, ImVec2(0, 150.0f), true);
+        ImGui::BeginChild(id, ImVec2(0, 160.0f), true);
 
         // Header line
         ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "%s", title);
-        ImGui::SameLine();
-        ImGui::TextDisabled("- %s", subtitle);
+        ImGui::TextDisabled("%s", subtitle);
 
         ImVec2 canvasPos = ImGui::GetCursorScreenPos();
         ImVec2 canvasSize = ImGui::GetContentRegionAvail();
@@ -1689,7 +1771,7 @@ public:
         ImGui::BeginChild("PreprocRight", ImVec2(0, 0), false);
 
         // Top KPI Analytics Banner (Utilizes top-right space)
-        ImGui::BeginChild("PreprocSummaryBanner", ImVec2(0, 72.0f), true);
+        ImGui::BeginChild("PreprocSummaryBanner", ImVec2(0, 78.0f), true);
         ImGui::Columns(4, "PreprocKpiCols", false);
 
         // KPI 1: Dataset Coverage
@@ -1701,19 +1783,19 @@ public:
         ImGui::NextColumn();
         ImGui::TextDisabled("RESAMPLING BENCHMARK");
         ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.55f, 1.0f), "%.0f -> %.0f avg", avgOrigVerts, avgResampledVerts);
-        ImGui::TextDisabled("Target: [5,000 - 10,000] verts");
+        ImGui::TextDisabled("Target: [5,000 - 10,000]");
 
         // KPI 3: Barycenter & AABB Normalization
         ImGui::NextColumn();
         ImGui::TextDisabled("NORMALIZATION ACCURACY");
-        ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.55f, 1.0f), "Barycenter Error < 1e-6");
-        ImGui::TextDisabled("Unit Cube Max Dim = 1.000");
+        ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.55f, 1.0f), "Barycenter < 1e-6");
+        ImGui::TextDisabled("Unit Cube Max Dim = 1.0");
 
         // KPI 4: Outliers Detected
         ImGui::NextColumn();
-        ImGui::TextDisabled("OUTLIER DEVIATION (MODE 4)");
-        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.35f, 1.0f), "%d Extreme / %d Average", (int)outlierHighVerts.size(), (int)outlierLowVerts.size());
-        ImGui::TextDisabled("Z-score > 3.0 sigma deviation");
+        ImGui::TextDisabled("OUTLIERS (MODE 4)");
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.35f, 1.0f), "%d High / %d Average", (int)outlierHighVerts.size(), (int)outlierLowVerts.size());
+        ImGui::TextDisabled("Z-score > 3.0 sigma");
 
         ImGui::Columns(1);
         ImGui::EndChild();
@@ -1803,8 +1885,7 @@ public:
     {
         ImGui::BeginChild(title, ImVec2(0, heightPx), true);
         ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "%s", title);
-        ImGui::SameLine();
-        ImGui::TextDisabled("- %s", subtitle);
+        ImGui::TextDisabled("%s", subtitle);
 
         ImVec2 canvasPos = ImGui::GetCursorScreenPos();
         ImVec2 canvasSize = ImGui::GetContentRegionAvail();
@@ -1927,18 +2008,18 @@ public:
 
         ImGui::TextColored(ImVec4(0.35f, 0.85f, 1.0f, 1.0f),
             "Query Shape (Cyan): #%d %s (%s)", qShape.id, qShape.className.c_str(), qShape.fileName.c_str());
-        ImGui::SameLine(0, 25);
+        ImGui::SameLine(0, 20);
         ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.25f, 1.0f),
-            "Comparison Shape (Orange): #%d %s (%s)", cShape.id, cShape.className.c_str(), cShape.fileName.c_str());
-        ImGui::SameLine(0, 25);
-        ImGui::SetNextItemWidth(120);
-        ImGui::InputInt("Compare ID", &compareShapeId);
-        compareShapeId = std::clamp(compareShapeId, 0, (int)shapes.size() - 1);
+            "|  Comparison Shape (Orange): #%d %s (%s)", cShape.id, cShape.className.c_str(), cShape.fileName.c_str());
 
-        ImGui::Checkbox("Show Query (Cyan)", &showQueryHist); ImGui::SameLine();
-        ImGui::Checkbox("Show Comparison (Orange)", &showCompareHist); ImGui::SameLine();
-        ImGui::Checkbox("Show Class Mean (Green)", &showClassMeanHist); ImGui::SameLine();
-        ImGui::Checkbox("Show All Class Shapes (Spaghetti Plot, Mode 3)", &showClassSpaghetti);
+        ImGui::SetNextItemWidth(100.0f);
+        ImGui::InputInt("Compare Shape ID", &compareShapeId);
+        compareShapeId = std::clamp(compareShapeId, 0, (int)shapes.size() - 1);
+        ImGui::SameLine(0, 16);
+        ImGui::Checkbox("Query (Cyan)", &showQueryHist); ImGui::SameLine();
+        ImGui::Checkbox("Comparison (Orange)", &showCompareHist); ImGui::SameLine();
+        ImGui::Checkbox("Class Mean (Green)", &showClassMeanHist); ImGui::SameLine();
+        ImGui::Checkbox("Class Spaghetti (Mode 3)", &showClassSpaghetti);
 
         ImGui::Separator();
 
@@ -1985,16 +2066,16 @@ public:
             "GROUPS 1-5: OSADA SHAPE DISTRIBUTIONS (32 BINS - HOVER MOUSE FOR VALUES)");
 
         ImGui::Columns(2, "HistGridCols", false);
-        drawCustomLineHistogram("A3 Distribution (Group 1)", "Angle between 3 random surface points", 0, selectedShapeId, compareShapeId, selectedClassIdx, 165.0f);
-        drawCustomLineHistogram("D2 Distribution (Group 3)", "Euclidean distance between 2 random surface points", 2, selectedShapeId, compareShapeId, selectedClassIdx, 165.0f);
-        drawCustomLineHistogram("D4 Distribution (Group 5)", "Cube root of tetrahedron volume (4 random points)", 4, selectedShapeId, compareShapeId, selectedClassIdx, 165.0f);
+        drawCustomLineHistogram("A3 Distribution (Group 1)", "Angle between 3 random surface points", 0, selectedShapeId, compareShapeId, selectedClassIdx, 175.0f);
+        drawCustomLineHistogram("D2 Distribution (Group 3)", "Euclidean distance between 2 random surface points", 2, selectedShapeId, compareShapeId, selectedClassIdx, 175.0f);
+        drawCustomLineHistogram("D4 Distribution (Group 5)", "Cube root of tetrahedron volume (4 random points)", 4, selectedShapeId, compareShapeId, selectedClassIdx, 175.0f);
 
         ImGui::NextColumn();
-        drawCustomLineHistogram("D1 Distribution (Group 2)", "Distance from Barycenter (0,0,0) to random point", 1, selectedShapeId, compareShapeId, selectedClassIdx, 165.0f);
-        drawCustomLineHistogram("D3 Distribution (Group 4)", "Square root of triangle area (3 random surface points)", 3, selectedShapeId, compareShapeId, selectedClassIdx, 165.0f);
+        drawCustomLineHistogram("D1 Distribution (Group 2)", "Distance from Barycenter (0,0,0) to random point", 1, selectedShapeId, compareShapeId, selectedClassIdx, 175.0f);
+        drawCustomLineHistogram("D3 Distribution (Group 4)", "Square root of triangle area (3 random surface points)", 3, selectedShapeId, compareShapeId, selectedClassIdx, 175.0f);
 
         // Distance breakdown card between Query and Compare shape
-        ImGui::BeginChild("PairDistBox", ImVec2(0, 165.0f), true);
+        ImGui::BeginChild("PairDistBox", ImVec2(0, 175.0f), true);
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.55f, 1.0f), "PAIRWISE DISTANCE BREAKDOWN: #%d (%s) VS #%d (%s):",
             qShape.id, qShape.className.c_str(), cShape.id, cShape.className.c_str());
         if (selectedShapeId < (int)featStand.features.size() && compareShapeId < (int)featStand.features.size()) {
@@ -2018,18 +2099,22 @@ public:
     // ========================================================================
     void drawTabTsneProjection() {
         ImGui::Columns(2, "TsneCols", true);
-        ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() - 680.0f);
+        ImGui::SetColumnWidth(0, std::max(600.0f, ImGui::GetWindowWidth() - 650.0f));
 
         // Top Controls
         ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f),
             "2D BARNES-HUT t-SNE EMBEDDING (%d SHAPES FROM 166D FEATURE SPACE - PRECOMPUTED)", (int)tsnePoints.size());
+
+        // Row 1: Filter Selection
         ImGui::Text("Filter:"); ImGui::SameLine();
         ImGui::RadioButton("All 69 Classes", &tsneFilterMode, 0); ImGui::SameLine();
-        ImGui::RadioButton("Highlight Selected Class", &tsneFilterMode, 1); ImGui::SameLine();
-        ImGui::RadioButton("Highlight Query + Top-K Neighbors", &tsneFilterMode, 2); ImGui::SameLine();
-        ImGui::SetNextItemWidth(100);
-        ImGui::SliderFloat("Point Radius", &tsnePointRadius, 2.0f, 9.0f, "%.1f"); ImGui::SameLine();
-        if (ImGui::SmallButton("Reset View")) { tsneZoom = 1.0f; tsnePan = ImVec2(0, 0); }
+        ImGui::RadioButton("Selected Class", &tsneFilterMode, 1); ImGui::SameLine();
+        ImGui::RadioButton("Highlight Query + Top-K Neighbors", &tsneFilterMode, 2);
+
+        // Row 2: View Controls (Point Radius & Reset View)
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::SliderFloat("Point Radius", &tsnePointRadius, 2.0f, 9.0f, "%.1f"); ImGui::SameLine(0, 15);
+        if (ImGui::Button("Reset View")) { tsneZoom = 1.0f; tsnePan = ImVec2(0, 0); }
 
         ImVec2 canvasPos = ImGui::GetCursorScreenPos();
         ImVec2 canvasSize = ImGui::GetContentRegionAvail();
@@ -2177,7 +2262,7 @@ public:
     // ========================================================================
     void drawTabEvaluation() {
         ImGui::Columns(2, "EvalCols", true);
-        ImGui::SetColumnWidth(0, 560.0f);
+        ImGui::SetColumnWidth(0, std::max(600.0f, ImGui::GetWindowWidth() * 0.46f));
 
         ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "SYSTEM EVALUATION & ROC-AUC CURVES (MODE 6 - PRECOMPUTED)");
         ImGui::Checkbox("Standardized Linear (AUC 0.7820)", &showEvalStd); ImGui::SameLine();
@@ -2186,9 +2271,9 @@ public:
         ImGui::Checkbox("Selected Class Curve", &showEvalSelectedClass);
 
         ImGui::Text("X-Axis Metric:"); ImGui::SameLine();
-        if (ImGui::RadioButton("1 - Specificity (FPR, Standard ROC)", plotStandardROC)) plotStandardROC = true;
+        if (ImGui::RadioButton("Specificity (TNR)", !plotStandardROC)) plotStandardROC = false;
         ImGui::SameLine();
-        if (ImGui::RadioButton("Specificity (TNR, CSV Plot)", !plotStandardROC)) plotStandardROC = false;
+        if (ImGui::RadioButton("1 - Specificity (FPR, Traditional ROC)", plotStandardROC)) plotStandardROC = true;
 
         // Draw ROC Curve Canvas
         ImVec2 canvasPos = ImGui::GetCursorScreenPos();
@@ -2249,10 +2334,10 @@ public:
         ImGui::Spacing();
         ImGui::BeginChild("EvalSummaryBox", ImVec2(0, 0), true);
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.55f, 1.0f), "SYSTEM BENCHMARK SUMMARY (2,483 MODELS, 69 CLASSES):");
-        ImGui::BulletText("Global ROC-AUC (Standardized Linear): 0.7820 | After Improvements: 0.7905 | ANN kd-tree: 0.8033");
-        ImGui::BulletText("Precision@1 (excl. self): 55.05%% (vs. 1.45%% for random guess over 69 classes)");
-        ImGui::BulletText("Top Performing Classes: Bicycle (AUC 0.9763, 100%% P@1), ComputerKeyboard (AUC 0.9592), Glasses (AUC 0.9495)");
-        ImGui::BulletText("Selected Class '%s' (%d shapes): AUC Standard = %.4f | AUC Improved = %.4f | AUC ANN = %.4f",
+        ImGui::Bullet(); ImGui::TextWrapped("Global ROC-AUC (Standardized Linear): 0.7820 | After Improvements: 0.7905 | ANN kd-tree: 0.8033");
+        ImGui::Bullet(); ImGui::TextWrapped("Precision@1 (excl. self): 55.05%% (vs. 1.45%% for random guess over 69 classes)");
+        ImGui::Bullet(); ImGui::TextWrapped("Top Performing Classes: Bicycle (AUC 0.9763, 100%% P@1), ComputerKeyboard (AUC 0.9592), Glasses (AUC 0.9495)");
+        ImGui::Bullet(); ImGui::TextWrapped("Selected Class '%s' (%d shapes): AUC Standard = %.4f | AUC Improved = %.4f | AUC ANN = %.4f",
             selClassName.c_str(), classes[selectedClassIdx].count,
             classes[selectedClassIdx].aucStd, classes[selectedClassIdx].aucImp, classes[selectedClassIdx].aucAnn);
         ImGui::EndChild();
@@ -2329,7 +2414,11 @@ public:
         // Top Presentation Banner
         ImGui::TextColored(ImVec4(0.35f, 0.85f, 1.0f, 1.0f),
             "3D MULTIMEDIA RETRIEVAL SYSTEM - INTERACTIVE PRESENTATION & DEMO SUITE");
-        ImGui::SameLine(ImGui::GetWindowWidth() - 470.0f);
+        if (ImGui::GetWindowWidth() > 1050.0f) {
+            ImGui::SameLine(ImGui::GetWindowWidth() - 470.0f);
+        } else {
+            ImGui::Spacing();
+        }
         ImGui::TextDisabled("Precomputed DB: %d shapes, %d classes (Loaded in %.0f ms) | %.0f FPS",
             (int)shapes.size(), (int)classes.size(), startupLoadTimeMs, ImGui::GetIO().Framerate);
         ImGui::Separator();
