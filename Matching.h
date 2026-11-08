@@ -1,4 +1,5 @@
 #pragma once
+#include <ANN/ANN.h>
 
 fs::path promptPathOrSelect()
 {
@@ -97,11 +98,13 @@ std::array<double, NUM_GROUPS> groupDistances(
 	const std::vector<double>& a, const std::vector<double>& b)
 {
 	std::array<double, NUM_GROUPS> d{};
-	d[0] = distanceLp(a, b);                         // group 0: single features
+	d[0] = distanceLp(a, b);                              // group 0: all single features
+	int minLen = static_cast<int>(std::min(a.size(), b.size()));
+	int histBins = (minLen > numSingleFeatures) ? (minLen - numSingleFeatures) / numHistograms : numHistogramBins;
 	for (int h = 0; h < numHistograms; h++)
 	{
-		int start = numSingleFeatures + h * numHistogramBins;
-		d[NUM_SINGLE_GROUPS + h] = histogramEMD(a, b, start, numHistogramBins);
+		int start = numSingleFeatures + h * histBins;
+		d[NUM_SINGLE_GROUPS + h] = histogramEMD(a, b, start, histBins);
 	}
 	return d;
 }
@@ -113,17 +116,18 @@ inline void normalizeWeights(FeatureWeights& w)
 	if (sum > 1e-9) for (double& x : w) x /= sum;
 }
 
-
-
-
-
 inline double weightedDistance(const std::vector<double>& a,
 	const std::vector<double>& b,
 	const FeatureWeights& w)
 {
+	double p = 2.0;
 	auto d = groupDistances(a, b);
 	double total = 0.0;
-	for (size_t g = 0; g < NUM_GROUPS; g++)
+	for (size_t g = 0; g < NUM_SINGLE_GROUPS; g++)
+		total += w[g] * pow(d[g], p);
+	total = pow(total, 1.0 / p);
+
+	for (size_t g = NUM_SINGLE_GROUPS; g < NUM_GROUPS; g++)
 		total += w[g] * d[g];
 	return total;
 }
@@ -191,8 +195,6 @@ inline FeatureWeights computeWeightsFromDatabase(
 
 // Distance functions
 
-
-
 std::vector<std::vector<float>> makeDistanceVector(
 	const std::vector<std::vector<double>>& features,
 	const std::vector<double>& query,
@@ -207,6 +209,40 @@ std::vector<std::vector<float>> makeDistanceVector(
 	return distances;
 }
 
+// Transform a feature-vector to weighted Hellinger space for ANN
+inline std::vector<double> embedFeatureForANN(
+	const std::vector<double>& v,
+	const FeatureWeights& w)
+{
+	std::vector<double> emb(v.size(), 0.0);
+	// reduze extreme z-outliers and scale with w[0]
+	for (int i = 0; i < numSingleFeatures && i < static_cast<int>(v.size()); i++)
+	{
+		double clamped = std::clamp(v[i], -2.0, 4.0);
+		emb[i] = (w[0] / 4.0) * clamped;
+	}
+	
+	int histBins = (static_cast<int>(v.size()) > numSingleFeatures)
+		? (static_cast<int>(v.size()) - numSingleFeatures) / numHistograms
+		: numHistogramBins;
+
+	// group 1 till 5 Hellinger embedding (sqrt per histogram bin times weight)
+	for (int h = 0; h < numHistograms; h++)
+	{
+		int start = numSingleFeatures + h * histBins;
+		double weight = w[NUM_SINGLE_GROUPS + h];
+		for (int b = 0; b < histBins; b++)
+		{
+			int idx = start + b;
+			if (idx < static_cast<int>(v.size()))
+			{
+				emb[idx] = weight * std::sqrt(std::max(v[idx], 0.0));
+			}
+		}
+	}
+	
+	return emb;
+}
 
 
 // Redundant
@@ -247,3 +283,6 @@ std::vector<std::vector<float>> makeDistanceVector(const std::vector<std::vector
 
 	return distances;
 }
+
+
+//

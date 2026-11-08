@@ -1,12 +1,14 @@
 #pragma once
 #include <vector>
 #include <array>
+#include <string>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <cmath>
+#include <algorithm>
 #include "globals.h"
 
-const int numSingleFeatures = 6;
-const int numHistograms = 5;
-const int numHistogramBins = 20;
-const int numFeatures = numSingleFeatures + numHistograms * numHistogramBins;
 constexpr size_t NUM_SINGLE_GROUPS = 1;
 constexpr size_t NUM_GROUPS = NUM_SINGLE_GROUPS + numHistograms;   // 1 + 5 = 6
 constexpr double SINGLE_MASS_SHIFT = 3.0;
@@ -87,6 +89,7 @@ void standardizeSingleFeatures(std::vector<std::vector<double>>& features)
 
 void normalizeHistogram(std::vector<double>& row)
 {
+	if (row.size() < numFeatures) return;
 	for (int i = 0; i < numHistograms; i++)
 	{
 		int startCol = numSingleFeatures + i * numHistogramBins;

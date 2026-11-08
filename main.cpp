@@ -13,13 +13,14 @@
 #include "camera.h"
 #include "fileSelector.h"
 #include "resampling.h"
-#include "Historgam.h"
+#include "Histogram.h"
 #include "Features.h"
 #include "QuickSort.h"
 #include "FeatureNormStand.h"
 #include "Matching.h"
 #include "matchheur.h"
 #include "globals.h"
+#include "projection.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/pca.hpp>
@@ -73,7 +74,6 @@ const char* vertexShaderSource = { "#version 330 core\n"
 
 namespace fs = std::filesystem;
 int application_mode;
-
 
 // Helper functions
 
@@ -222,14 +222,14 @@ void exportFeaturesToCSV(const std::vector<Mesh>& meshes, const std::vector<std:
 
     // Build CSV Header
     file << "Shape id;Class";
-    if (features[0].size() == 106)
+    if (features[0].size() == numFeatures)
     {
         file << ";Surface Area;Compactness;Rectangularity;Diameter;Convexity;Eccentricity";
-        for (int i = 0; i < 20; ++i) file << ";A3_" << i;
-        for (int i = 0; i < 20; ++i) file << ";D1_" << i;
-        for (int i = 0; i < 20; ++i) file << ";D2_" << i;
-        for (int i = 0; i < 20; ++i) file << ";D3_" << i;
-        for (int i = 0; i < 20; ++i) file << ";D4_" << i;
+        for (int i = 0; i < numHistogramBins; ++i) file << ";A3_" << i;
+        for (int i = 0; i < numHistogramBins; ++i) file << ";D1_" << i;
+        for (int i = 0; i < numHistogramBins; ++i) file << ";D2_" << i;
+        for (int i = 0; i < numHistogramBins; ++i) file << ";D3_" << i;
+        for (int i = 0; i < numHistogramBins; ++i) file << ";D4_" << i;
     }
     else
     {
@@ -277,6 +277,83 @@ void promptSaveFeatures(const std::vector<Mesh>& meshes, const std::vector<std::
     {
         std::cout << "Invalid input. Skipping CSV export.\n";
     }
+}
+
+void exportEvaluationToCSV(const std::vector<std::pair<float, float>>& points, const float& total_area, const std::string& filename)
+{
+    std::string fullPath = filename;
+    if (fullPath.size() < 4 || fullPath.substr(fullPath.size() - 4) != ".csv")
+    {
+        fullPath += ".csv";
+    }
+
+    std::ofstream file(fullPath);
+    if (!file.is_open())
+    {
+        std::cerr << "Error: Could not open file " << fullPath << " for writing.\n";
+        return;
+    }
+
+    if (points.empty())
+    {
+        std::cerr << "Warning: Points list is empty.\n";
+        return;
+    }
+
+    file << "Plot point id;Sensitivity;Specificity;;" << total_area << "\n";
+
+    // Write data rows
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        file << i << ";" << points[i].first << ";" << points[i].second << "\n";
+    }
+
+    std::cout << "Successfully exported " << points.size() << " evaluation plot points to " << fullPath << "\n";
+}
+
+void exportEvaluationPerClassToCSV(const std::vector<std::vector<std::pair<float,float>>>& points_per_class,
+    const std::vector<float>& total_area_per_class,
+    const std::vector<string>& labels,
+    const std::vector<int>& obj_counts,
+    const std::string& filename)
+{
+    std::string fullPath = filename;
+    if (fullPath.size() < 4 || fullPath.substr(fullPath.size() - 4) != ".csv")
+    {
+        fullPath += ".csv";
+    }
+
+    std::ofstream file(fullPath);
+    if (!file.is_open())
+    {
+        std::cerr << "Error: Could not open file " << fullPath << " for writing.\n";
+        return;
+    }
+
+    if (points_per_class.empty())
+    {
+        std::cerr << "Warning: Points list is empty.\n";
+        return;
+    }
+
+    file << "Class;Sensitivity;Specificity;AUC\n";
+
+    // Write data rows
+    int current_class = 0;
+    for (int i = 0; i < points_per_class.size(); i++)
+    {
+        auto str = labels[current_class];
+        auto& entry = points_per_class[i];
+        for (int j = 0; j < entry.size(); j++)
+        {
+            file << str << ";" << entry[j].first << ";" << entry[j].second << "\n";
+        }
+        file << str << ";;;" << total_area_per_class[i] << "\n";
+        file << "\n";
+        current_class += obj_counts[i];
+    }
+
+    std::cout << "Successfully exported " << points_per_class.size() << " classes' plot points to " << fullPath << "\n";
 }
 
 // Database analyse functions
@@ -328,7 +405,7 @@ std::vector<Mesh> parseDatabase(fs::path path)
 
     std::cout << "Parsing " << total << " files in parallel...\n";
 
-    //#pragma omp parallel for schedule(dynamic)
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         Parser p;
@@ -338,7 +415,7 @@ std::vector<Mesh> parseDatabase(fs::path path)
         int done = ++parsedCount;
         if (done % 100 == 0 || done == total)
         {
-            //#pragma omp critical
+            #pragma omp critical
             std::cout << "[Parsing] Completed " << done << " / " << total << " files.\n";
         }
     }
@@ -424,7 +501,7 @@ void resampleMeshes(std::vector<Mesh>& meshes, int minVert = minVertCount, int m
 
     std::atomic<int> completed{0};
 
-    //#pragma omp parallel for schedule(dynamic)
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         resampleMesh(meshes[i], minVert, maxVert);
@@ -432,7 +509,7 @@ void resampleMeshes(std::vector<Mesh>& meshes, int minVert = minVertCount, int m
         int done = ++completed;
         if (done % 20 == 0 || done == total)
         {
-            //#pragma omp critical
+            #pragma omp critical
             std::cout << "[Resampling] Completed " << done << " / " << total << " meshes (" << (done * 100 / total) << "%)\n";
         }
     }
@@ -501,18 +578,30 @@ Point3 calculateBarycenter(Mesh& input)
 
 double calculateVolume(Mesh& input)
 {
-    double volume = 0.0;
+    double signedVolume = 0.0;
+    double absVolume = 0.0;
 
     for (const auto& f : input.faces)
     {
+        if (f.v.size() < 3) continue;
+
         const Vec3& a = input.vertices[f.v[0]] - input.barycenter;
         const Vec3& b = input.vertices[f.v[1]] - input.barycenter;
         const Vec3& c = input.vertices[f.v[2]] - input.barycenter;
 
-        volume += dot(a, cross(b, c)) / 6.0;
+        double tetVol = dot(a, cross(b, c)) / 6.0;
+        signedVolume += tetVol;
+        absVolume += std::abs(tetVol);
     }
 
-    return std::abs(volume);
+    double vol = std::abs(signedVolume);
+
+    if (vol <= 1e-6 && absVolume > 1e-6)
+    {
+        vol = 0.5 * absVolume;
+    }
+
+    return vol;
 }
 
 void precomputeMesh(Mesh& input)
@@ -535,7 +624,7 @@ void precomputeMeshes(std::vector<Mesh>& meshes)
     int total = static_cast<int>(meshes.size());
     std::cout << "Precomputing " << total << " meshes in parallel...\n";
 
-    //#pragma omp parallel for schedule(dynamic)
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         precomputeMesh(meshes[i]);
@@ -636,22 +725,59 @@ void scaleUniformly(Mesh& input)
     }
 }
 
+// calculate area weighted covariance matrix for all triangles
+glm::dmat3 computeAreaWeightedCovariance(const Mesh& input)
+{
+    glm::dmat3 covMat(0.0);
+    double totalArea = 0.0;
+    
+    for (const auto& f : input.faces)
+    {
+        if (f.v.size() < 3 || f.area <= 0.0 || std::isnan(f.area))
+            continue;
+        const Point3& p0 = input.vertices[f.v[0]];
+        const Point3& p1 = input.vertices[f.v[1]];
+        const Point3& p2 = input.vertices[f.v[2]];
+        const Point3& c = f.centroid;
+        
+        double w = f.area;
+        totalArea += w;
+        
+        // Quadratic integral over the triangle
+        for (int row = 0; row < 3; ++row)
+        {
+            for (int col = 0; col < 3; ++col)
+            {
+                double term = (p0.e[row] * p0.e[col] + p1.e[row] * p1.e[col] + p2.e[row] * p2.e[col] + 9.0 * c.e[row] * c.e[col]) / 12.0;
+                covMat[col][row] += w * term;
+            }
+        }
+    }
+    
+    // fallback
+    if (totalArea <= 1e-12)
+    {
+        std::vector<glm::dvec3> v;
+        v.reserve(input.vertices.size());
+        for (const auto& vert : input.vertices )
+            v.emplace_back(vert.x(), vert.y(), vert.z());
+        glm::dvec3 C(0.0, 0.0, 0.0);
+        return glm::computeCovarianceMatrix(v.data(), v.size(), C);
+    }
+    
+    return covMat / totalArea;
+}
+
 void alignAxes(Mesh& input)
 {
     //std::cout << "Rotating..\n";
+    if (input.vertices.empty()) return;
 
     // Step 1: Compute Covariance Matrix (3x3)
     // Can be calculated by first putting all vertices in a Nx3 matrix V (so each row of the matrix is a xyz of a vertex in the shape)
     // Then we can get C = (1 / N) * (V^t * V), where N is the number of vertices
     
-    std::vector<glm::dvec3> V;
-    V.reserve(input.vertices.size());
-    for (const auto& v : input.vertices)
-    {
-        V.emplace_back(v.x(), v.y(), v.z());
-    }
-    
-    glm::dvec3 C(0.0, 0.0, 0.0);
+    glm::dmat3 covMat = computeAreaWeightedCovariance(input);
     
     // Step 2: Perform Eigen decomposition
     // We have to solve det(C - l * I) = 0, where I is the identity matrix and l is lambda --> solve for lambda
@@ -660,8 +786,6 @@ void alignAxes(Mesh& input)
     // where li is the ith eigenvalue, and vi is the corresponding eigenvector.
     // We can use Gaussian elimination for this. After applying that, we have to normalize the result.
     // Largest eigenvalue means that its corresponding eigenvector represents the longest dimension of the shape --> same principal for the other values/vectors
-    
-    glm::dmat3 covMat = glm::computeCovarianceMatrix(V.data(), V.size(), C);
     
     glm::dvec3 evals(1.0, 1.0, 1.0);
     glm::dmat3 evecs; 
@@ -689,59 +813,28 @@ void alignAxes(Mesh& input)
     
     //Rotation Matrix
     glm::dmat3 R(e1, e2, e3);
+    glm::dmat3 Rt = glm::transpose(R);
     
-    // Rotate the vertices 
     for (auto& v : input.vertices) {
         glm::dvec3 p(v.x(), v.y(), v.z());
-        glm::dvec3 pRot = glm::transpose(R) * p; // oftewel dot-product met e1, e2, e3
+        glm::dvec3 pRot = Rt * p;
         v = Point3(pRot.x, pRot.y, pRot.z);
     }
 
-    for (auto& f : input.faces)
-    {
+    for (auto& f : input.faces) {
         auto& c = f.centroid;
         glm::dvec3 p(c.x(), c.y(), c.z());
-        glm::dvec3 pRot = glm::transpose(R) * p;
+        glm::dvec3 pRot = Rt * p;
         c = Point3(pRot.x, pRot.y, pRot.z);
     }
 
-    // After rotation, we calculate the new eigenvectors
-    std::vector<glm::dvec3> V_new;
-    V_new.reserve(input.vertices.size());
-    for (const auto& v : input.vertices)
-    {
-        V_new.emplace_back(v.x(), v.y(), v.z());
-    }
+    // save the eigenvalues
+    input.ev1 = Vec3(1.0, 0.0, 0.0);
+    input.ev2 = Vec3(0.0, 1.0, 0.0);
+    input.ev3 = Vec3(0.0, 0.0, 1.0);
+    input.eigenvalues = Vec3(evals[0], evals[1], evals[2]);
 
-    glm::dvec3 C_new(0.0, 0.0, 0.0);
-
-    glm::dmat3 covMat_new = glm::computeCovarianceMatrix(V_new.data(), V_new.size(), C_new);
-
-    glm::dvec3 evals_new(1.0, 1.0, 1.0);
-    glm::dmat3 evecs_new;
-    int count_new = glm::findEigenvaluesSymReal(covMat_new, evals_new, evecs_new);
-    if (count_new != 3 || std::isnan(evals_new[0]) || std::isnan(evals_new[1]) || std::isnan(evals_new[2])) {
-        input.eigenvalues = Vec3(1.0, 1.0, 1.0);
-        return;
-    }
-
-    // Sort from largest to smallest (evlas[0] >= evals[1] >= evals[2])
-    glm::sortEigenvalues(evals_new, evecs_new);
-
-    glm::dvec3 e1_new = glm::normalize(evecs_new[0]);
-    glm::dvec3 e2_new = glm::normalize(evecs_new[1]);
-    glm::dvec3 e3_new = glm::normalize(evecs_new[2]);
-
-    if (glm::dot(glm::cross(e1_new, e2_new), e3_new) < 0.0) {
-        e3_new = -e3_new;
-    }
-
-    input.ev1 = Vec3(e1_new.x, e1_new.y, e1_new.z);
-    input.ev2 = Vec3(e2_new.x, e2_new.y, e2_new.z);
-    input.ev3 = Vec3(e3_new.x, e3_new.y, e3_new.z);
-    input.eigenvalues = Vec3(evals_new[0], evals_new[1], evals_new[2]);
-    
-    // Update old AABB into new one
+    // Update AABB
     calculateAABB(input);
     if (application_mode == 1)
     {
@@ -772,59 +865,54 @@ void flipShape(Mesh& input)
     float fy = 0;
     float fz = 0;
 
-    for (auto face : input.faces)
+    // calculate for each axis area weighted momentum
+    for (const auto& face : input.faces)
     {
-        float centersum[3]{ 0, 0, 0 };
-        for (int a : face.v)
-        {
-            centersum[0] += input.vertices[a].x();
-            centersum[1] += input.vertices[a].y();
-            centersum[2] += input.vertices[a].z();
-        }
-
-        for (int i = 0; i < 3; i++) centersum[i] /= face.v.size();
+        double w = (face.area > 0.0 && !std::isnan(face.area)) ? face.area : 0.0;
+        
+        double cx = face.centroid.x();
+        double cy = face.centroid.y();
+        double cz = face.centroid.z();
 
         // Then, for x, y and z, we calculate fi = sum_t sign(C t,i)(C t,i)^2
-        fx += sign(centersum[0]) * pow(centersum[0], 2);
-        fy += sign(centersum[1]) * pow(centersum[1], 2);
-        fz += sign(centersum[2]) * pow(centersum[2], 2);
+        fx += w * sign(static_cast<float>(cx)) * (cx * cx);
+        fy += w * sign(static_cast<float>(cy)) * (cy * cy);
+        fz += w * sign(static_cast<float>(cz)) * (cz * cz);
     }
+    
+    int sfx = sign(static_cast<float>(fx));
+    int sfy = sign(static_cast<float>(fy));
+    int sfz = sign(static_cast<float>(fz));
 
     for (Point3& v : input.vertices)
     {
-        v = Point3(sign(fx) * v.x(), sign(fy) * v.y(), sign(fz) * v.z());
+        v = Point3(sfx * v.x(), sfy * v.y(), sfz * v.z());
     }
 
     for (auto& f : input.faces)
     {
         auto& c = f.centroid;
-        c = Point3(sign(fx) * c.x(), sign(fy) * c.y(), sign(fz) * c.z());
+        c = Point3(sfx * c.x(), sfy * c.y(), sfz * c.z());
     }
 
     // Calculate new signs for each axis
     fx = 0; fy = 0; fz = 0;
 
-    for (auto face : input.faces)
+    for (const auto& face : input.faces)
     {
-        float centersum[3]{ 0, 0, 0 };
-        for (int a : face.v)
-        {
-            centersum[0] += input.vertices[a].x();
-            centersum[1] += input.vertices[a].y();
-            centersum[2] += input.vertices[a].z();
-        }
+        double w = (face.area > 0.0 && !std::isnan(face.area)) ? face.area : 0.0;
+        double cx = face.centroid.x();
+        double cy = face.centroid.y();
+        double cz = face.centroid.z();
 
-        for (int i = 0; i < 3; i++) centersum[i] /= face.v.size();
-
-        // Then, for x, y and z, we calculate fi = sum_t sign(C t,i)(C t,i)^2
-        fx += sign(centersum[0]) * pow(centersum[0], 2);
-        fy += sign(centersum[1]) * pow(centersum[1], 2);
-        fz += sign(centersum[2]) * pow(centersum[2], 2);
+        fx += w * sign(static_cast<float>(cx)) * (cx * cx);
+        fy += w * sign(static_cast<float>(cy)) * (cy * cy);
+        fz += w * sign(static_cast<float>(cz)) * (cz * cz);
     }
 
-    input.sx = sign(fx);
-    input.sy = sign(fy);
-    input.sz = sign(fz);
+    input.sx = sign(static_cast<float>(fx));
+    input.sy = sign(static_cast<float>(fy));
+    input.sz = sign(static_cast<float>(fz));
 
     // Update old AABB into new one
     calculateAABB(input);
@@ -850,7 +938,7 @@ void normalizeMeshes(std::vector<Mesh>& meshes)
     int total = static_cast<int>(meshes.size());
     std::cout << "Normalizing " << total << " meshes in parallel...\n";
 
-    //#pragma omp parallel for schedule(dynamic)
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         normalizeMesh(meshes[i]);
@@ -1226,7 +1314,7 @@ void renderObjects(std::vector<int> ids)
 
 int main()
 {
-    makeidpathcsv();
+    std::vector<int> obj_counts = makeidpathcsv();
     paths = readPaths();
 
     omp_set_num_threads(omp_get_max_threads());
@@ -1238,7 +1326,9 @@ int main()
     std::cout << "3. Histogram export mode\n";
     std::cout << "4. Outlier mode \n";
     std::cout << "5. Query mode \n";
-    
+    std::cout << "6. Evaluation mode \n";
+    std::cout << "7. project mode \n";
+
     std::cin >> application_mode;
 
 
@@ -1248,7 +1338,7 @@ int main()
         promptRenderObject();
     }
 
-    // Analyse mode
+    // Feature extraction mode
     else if (application_mode == 2)
     {
         // Analyse initial database
@@ -1272,18 +1362,27 @@ int main()
         std::vector<std::vector<double>> elem_desc;
         featureExtraction(meshes, elem_desc);
         
-        promptNormOrStandard(elem_desc);
+        // save raw features
+        exportFeaturesToCSV(meshes, elem_desc, "raw_features.csv");
+        
+        // create and save min-max normalized features
+        auto norm_desc = elem_desc;
+        normalizeFeatures(norm_desc);
+        exportFeaturesToCSV(meshes, norm_desc, fullFeaturesNormFilePath.string());
 
-        // Prompt to save feature vectors to CSV
-        promptSaveFeatures(meshes, elem_desc);
+        // create and save z-score normalized features
+        auto stand_desc = elem_desc;
+        standardizeFeatures(stand_desc);
+        exportFeaturesToCSV(meshes, stand_desc, fullFeaturesStandFilePath.string());
     }
     
-    //Histogram mode
+    // Histogram mode
     else if (application_mode == 3)
     {
         runHistogramMode();
     }
 
+    // Outlier mode
     else if (application_mode == 4) 
     {
         std::cout << "Reading .csv file..." << std::endl;
@@ -1305,6 +1404,7 @@ int main()
         renderObjects(outliers);
     }
 
+    // Querying mode
 	else if (application_mode == 5)
 	{
 		fs::path path = promptPathOrSelect();
@@ -1319,34 +1419,424 @@ int main()
 		
         auto queryFeatures = featureExtract(queryMesh);
         auto temp = queryFeatures;
-
-        StandardizationData stdData = readStandardizationData(standardizationDataFilePath.string());
-        standardizeWithData(queryFeatures, stdData);
-        normalizeHistogram(queryFeatures);
-        FeatureData featureData = readFeatures(fullFeaturesStandFilePath);
-
-        saveWeights(computeWeightsFromDatabase(featureData.features));
-
-        std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures, readWeights());
-
-        quicksort(distances, 1, 0, distances.size() - 1);
-
-        std::cout << "Enter how many results: " << std::endl;
-        int k;
-        std::cin >> k;
-
-        for (int i = 0; i < k; i++)
-            std::cout << "file " << paths[distances[i][0]] << "  dist " << distances[i][1]
-            << "  label " << featureData.labels[(size_t)distances[i][0]] << "\n";
-
-        std::vector<int> kbest;
-
-        for (int i = 0; i < k; i++)
+	    StandardizationData stdData = readStandardizationData(standardizationDataFilePath.string());
+	    standardizeWithData(queryFeatures, stdData);
+	    normalizeHistogram(queryFeatures);
+	    FeatureData featureData = readFeatures(fullFeaturesStandFilePath);
+	    
+        int N = static_cast<int>(featureData.features.size());
+        int D = (N > 0) ? static_cast<int>(featureData.features[0].size()) : 0;
+        if (N == 0 || D == 0)
         {
-            kbest.push_back(distances[i][0]);
+            std::cerr << "Error: No features found in database.\n";
+            return 0;
         }
 
-        renderObjects(kbest);
+        std::cout << "\n=== Select Search Method ===\n";
+        std::cout << "1. ANN (Approximate Nearest Neighbors kd-tree)\n";
+        std::cout << "2. Linear / Brute-force Search (makeDistanceVector + quicksort)\n";
+        std::cout << "Enter choice (1 or 2): ";
+        int searchMethod = 1;
+        std::cin >> searchMethod;
+
+        if (searchMethod == 1)
+        {
+            FeatureWeights weights = readWeights();
+            double weightSum = 0.0;
+            for (double wVal : weights) weightSum += wVal;
+            if (weightSum < 1e-9)
+            {
+                weights = computeWeightsFromDatabase(featureData.features);
+                saveWeights(weights);
+            }
+            
+            ANNpointArray dataPts = annAllocPts(N, D);
+            for (int n = 0; n < N; n++)
+            {
+                std::vector<double> embededRow = embedFeatureForANN(featureData.features[n], weights);
+                for (int d = 0; d < D; d++)
+                {
+                    dataPts[n][d] = embededRow[d];
+                }
+            }
+
+            ANNkd_tree* kdTree = new ANNkd_tree(dataPts, N, D);
+            
+            std::vector<double> embededQuery = embedFeatureForANN(queryFeatures, weights);
+
+            ANNpoint queryPt = annAllocPt(D);
+            for (int d = 0; d < D; d++)
+            {
+                queryPt[d] = embededQuery[d];
+            }
+
+            std::cout << "\nSelect ANN search type:\n";
+            std::cout << "  k - K-nearest neighbors\n";
+            std::cout << "  r - Radius / Range search\n";
+            std::cout << "Choice (k/r): ";
+            std::string searchType;
+            std::cin >> searchType;
+
+            std::vector<int> results;
+
+            if (searchType == "k" || searchType == "K")
+            {
+                std::cout << "Enter how many results (K): ";
+                int k = 10;
+                std::cin >> k;
+                if (k > N) k = N;
+                if (k < 1) k = 1;
+
+                ANNidxArray nnIdx = new ANNidx[k];
+                ANNdistArray dists = new ANNdist[k];
+
+                kdTree->annkSearch(queryPt, k, nnIdx, dists, 0.0);
+
+                std::cout << "\n--- ANN K-NN Search Results (K = " << k << ") ---\n";
+                for (int i = 0; i < k; i++)
+                {
+                    if (nnIdx[i] != ANN_NULL_IDX && nnIdx[i] >= 0 && nnIdx[i] < N)
+                    {
+                        results.push_back(nnIdx[i]);
+                        float dist = std::sqrt(static_cast<float>(dists[i]));
+                        std::cout << (i + 1) << ". file " << (nnIdx[i] < (int)paths.size() ? paths[nnIdx[i]] : std::to_string(nnIdx[i]))
+                                  << "  dist " << dist
+                                  << "  label " << featureData.labels[nnIdx[i]] << "\n";
+                    }
+                }
+
+                delete[] nnIdx;
+                delete[] dists;
+            }
+            else if (searchType == "r" || searchType == "R")
+            {
+                double r = 1.0;
+                std::cout << "Enter search radius (R): ";
+                std::cin >> r;
+
+                int maxK = N;
+                std::cout << "Enter max number of results to return (1-" << N << ", default " << N << "): ";
+                int inputMax;
+                if (std::cin >> inputMax && inputMax > 0 && inputMax <= N)
+                {
+                    maxK = inputMax;
+                }
+
+                ANNidxArray nnIdx = new ANNidx[maxK];
+                ANNdistArray dists = new ANNdist[maxK];
+                double sqRad = r * r;
+
+                // annkFRSearch retrieves points within distance R (squared distance <= sqRad)
+                int ptsFound = kdTree->annkFRSearch(queryPt, sqRad, maxK, nnIdx, dists, 0.0);
+
+                std::cout << "\n--- ANN Radius Search Results (R = " << r << ", found: " << ptsFound << ") ---\n";
+                int toShow = std::min(ptsFound, maxK);
+                for (int i = 0; i < toShow; i++)
+                {
+                    if (nnIdx[i] != ANN_NULL_IDX && nnIdx[i] >= 0 && nnIdx[i] < N)
+                    {
+                        results.push_back(nnIdx[i]);
+                        float dist = std::sqrt(static_cast<float>(dists[i]));
+                        std::cout << (i + 1) << ". file " << (nnIdx[i] < (int)paths.size() ? paths[nnIdx[i]] : std::to_string(nnIdx[i]))
+                                  << "  dist " << dist
+                                  << "  label " << featureData.labels[nnIdx[i]] << "\n";
+                    }
+                }
+
+                delete[] nnIdx;
+                delete[] dists;
+            }
+            else
+            {
+                std::cout << "Invalid search type selected.\n";
+            }
+
+            delete kdTree;
+            annDeallocPts(dataPts);
+            annDeallocPt(queryPt);
+            annClose();
+
+            if (!results.empty())
+            {
+                renderObjects(results);
+            }
+            else
+            {
+                std::cout << "No matching shapes found to render.\n";
+            }
+        }
+        else // Option 2: Linear / Brute-force search
+        {
+            saveWeights(computeWeightsFromDatabase(featureData.features));
+
+            std::vector<std::vector<float>> distances = makeDistanceVector(featureData.features, queryFeatures, readWeights());
+
+            quicksort(distances, 1, 0, distances.size() - 1);
+
+            std::cout << "Enter how many results: ";
+            int k = 10;
+            std::cin >> k;
+            if (k > (int)distances.size()) k = (int)distances.size();
+            if (k < 1) k = 1;
+
+            std::cout << "\n--- Linear Search Results (K = " << k << ") ---\n";
+            std::vector<int> kbest;
+            for (int i = 0; i < k; i++)
+            {
+                int idx = (int)distances[i][0];
+                kbest.push_back(idx);
+                std::cout << (i + 1) << ". file " << (idx < (int)paths.size() ? paths[idx] : std::to_string(idx))
+                          << "  dist " << distances[i][1]
+                          << "  label " << featureData.labels[idx] << "\n";
+            }
+
+            renderObjects(kbest);
+        }
+	} 
+    // Evaluation mode
+    else if (application_mode == 6)
+    {
+        std::cout << "Evaluating system..\n";
+        std::cout << "Enter evaluation metric (1-2483): \n";
+        int metric;
+        std::cin >> metric;
+        if (metric < 1) metric = 1;
+
+        std::cout << "\n=== Select Evaluation Search Method ===\n";
+        std::cout << "1. ANN (Approximate Nearest Neighbors kd-tree)\n";
+        std::cout << "2. Linear / Brute-force Search (makeDistanceVector + quicksort)\n";
+        std::cout << "Enter choice (1 or 2): ";
+        int evalMethod = 2;
+        std::cin >> evalMethod;
+
+        // Prepare database
+        auto database = readFeatures(fullFeaturesStandFilePath);
+        auto& db_feats = database.features;
+        int N = static_cast<int>(db_feats.size());
+        int D = (N > 0) ? static_cast<int>(db_feats[0].size()) : 0;
+        if (N == 0 || D == 0)
+        {
+            std::cerr << "Error: No features found in database.\n";
+            return 0;
+        }
+
+        FeatureWeights weights = computeWeightsFromDatabase(db_feats);
+        saveWeights(weights);
+
+        // Precompute ranked neighbor indices (sorted closest -> furthest) for each query i
+        std::vector<std::vector<int>> ranked_indices(N, std::vector<int>(N));
+
+        if (evalMethod == 1)
+        {
+            double eps = 0.0;
+            std::cout << "Enter ANN epsilon (0.0 = exact kd-tree, e.g. 0.1 = approximate): ";
+            std::cin >> eps;
+
+            std::cout << "Building ANN kd-tree and ranking all " << N << " queries...\n";
+            ANNpointArray dataPts = annAllocPts(N, D);
+            for (int n = 0; n < N; n++)
+            {
+                std::vector<double> embededRow = embedFeatureForANN(db_feats[n], weights);
+                for (int d = 0; d < D; d++)
+                {
+                    dataPts[n][d] = embededRow[d];
+                }
+            }
+
+            ANNkd_tree* kdTree = new ANNkd_tree(dataPts, N, D);
+            ANNpoint queryPt = annAllocPt(D);
+            ANNidxArray nnIdx = new ANNidx[N];
+            ANNdistArray dists = new ANNdist[N];
+
+            for (int i = 0; i < N; i++)
+            {
+                std::vector<double> embededQuery = embedFeatureForANN(db_feats[i], weights);
+                for (int d = 0; d < D; d++)
+                {
+                    queryPt[d] = embededQuery[d];
+                }
+
+                kdTree->annkSearch(queryPt, N, nnIdx, dists, eps);
+                for (int j = 0; j < N; j++)
+                {
+                    ranked_indices[i][j] = (nnIdx[j] != ANN_NULL_IDX && nnIdx[j] >= 0 && nnIdx[j] < N) ? nnIdx[j] : j;
+                }
+            }
+
+            delete[] nnIdx;
+            delete[] dists;
+            delete kdTree;
+            annDeallocPts(dataPts);
+            annDeallocPt(queryPt);
+            annClose();
+        }
+        else
+        {
+            std::cout << "Ranking all " << N << " queries using Linear Search + Quicksort in parallel...\n";
+            #pragma omp parallel for schedule(static)
+            for (int i = 0; i < N; i++)
+            {
+                auto distances = makeDistanceVector(db_feats, db_feats[i], weights);
+                quicksort(distances, 1, 0, distances.size() - 1);
+                for (int j = 0; j < N; j++)
+                {
+                    ranked_indices[i][j] = static_cast<int>(distances[j][0]);
+                }
+            }
+        }
+
+        std::vector<std::pair<float, float>> plot_points;
+        std::vector<std::vector<std::pair<float, float>>> plot_points_per_class(69);
+
+        // Build k steps (always include N as final point so ROC reaches Sensitivity = 1.0)
+        std::vector<int> k_steps;
+        for (int k = 0; k <= N; k += metric)
+        {
+            k_steps.push_back(k);
+        }
+        if (k_steps.empty() || k_steps.back() != N)
+        {
+            k_steps.push_back(N);
+        }
+
+        // k = number of items returned in the query
+        for (int k : k_steps)
+        {
+            int per = (((float)k) / (float)N) * 100.0f;
+            std::cout << "Evaluating k = " << k << " (" << per << "%)\n";
+
+            int current_class = 0;
+            int current_obj = 0;
+
+            float total_tp = 0, total_fp = 0, total_fn = 0, total_tn = 0;
+            float class_tp = 0, class_fp = 0, class_fn = 0, class_tn = 0;
+
+            // For each item in the database, match it against the entire database and calculate sens/spec
+            for (int i = 0; i <= N; i++)
+            {
+                // Onto new class, so save results of previous class
+                if (current_obj >= obj_counts[current_class])
+                {
+                    float sens_class = class_tp / (class_tp + class_fn);
+                    float spec_class = class_tn / (class_tn + class_fp);
+
+                    plot_points_per_class[current_class].push_back(std::make_pair(sens_class, spec_class));
+
+                    class_tp = 0;
+                    class_fp = 0;
+                    class_fn = 0;
+                    class_tn = 0;
+
+                    current_obj = 0;
+                    current_class++;
+
+                    if (i == N) break;
+                }
+
+                float tp = 0, fn = 0, fp = 0, tn = 0;
+
+                const auto& query_label = database.labels[i];
+
+                // Get the k-best items based on the precomputed ranking
+                for (int j = 0; j < k; j++)
+                {
+                    int id = ranked_indices[i][j];
+                    const auto& obj_label = database.labels[id];
+
+                    // True positive if labels are identical, false positive otherwise
+                    if (query_label == obj_label)
+                        tp++;
+                    else fp++;
+                }
+
+                // Get number of objects in the class of the queried object
+                auto num_objects_query_class = obj_counts[current_class];
+                fn = num_objects_query_class - tp; // False negatives is the number of objects not returned in the query that are in the class of the queried object
+                tn = N - tp - fp - fn; // True negatives are everything except the tps, fps and fns
+
+                total_tp += tp;
+                total_fp += fp;
+                total_fn += fn;
+                total_tn += tn;
+
+                class_tp += tp;
+                class_fp += fp;
+                class_fn += fn;
+                class_tn += tn;
+
+                current_obj++;
+            }
+
+            // Calculate sens and spec over the entire database for some value k
+            float sens = total_tp / (total_tp + total_fn);
+            float spec = total_tn / (total_tn + total_fp);
+
+            plot_points.push_back(std::make_pair(sens, spec));
+        }
+
+        // We can get area under curve by using the trapezoidal rule
+        // First, we calculate the area of the trapezoid between every two consecutive points
+        // Then, sum all trapezoid areas
+        float total_area = 0;
+        for (int i = 0; i < plot_points.size() - 1; i++)
+        {
+            auto& p1 = plot_points[i];
+            auto& p2 = plot_points[i + 1];
+
+            total_area += ((p1.second + p2.second) / 2) * (p2.first - p1.first);
+        }
+
+        std::vector<float> total_area_per_class;
+        for (int i = 0; i < plot_points_per_class.size(); i++)
+        {
+            auto& v = plot_points_per_class[i];
+            float total_area_class = 0;
+            for (int j = 0; j < v.size() - 1; j++)
+            {
+                auto& p1 = v[j];
+                auto& p2 = v[j + 1];
+
+                total_area_class += ((p1.second + p2.second) / 2) * (p2.first - p1.first);
+            }
+            total_area_per_class.push_back(total_area_class);
+        }
+
+        std::cout << "Evaluation score: " << total_area << "\n";
+
+        // Save to CSV
+        std::cout << "Save to CSV file? y/n:\n";
+        char c;
+        std::cin >> c;
+
+        if (c == 'y')
+        {
+            std::cout << "Enter filename:\n";
+            string filename;
+            std::cin >> filename;
+
+            if (filename.size() > 0)
+            {
+                exportEvaluationToCSV(plot_points, total_area, filename);
+                exportEvaluationPerClassToCSV(plot_points_per_class, total_area_per_class, database.labels, obj_counts, filename + "_per_class");
+            }
+                
+            else std::cout << "Cannot save to CSV file.\n";
+        }
+
+        std::cout << "Finished evaluation of system.\n";
+    }
+    // Projection mode
+    else if (application_mode == 7)
+	{
+		std::cout << "\n=== Mode 6: 2D t-SNE Projection & Scatterplot ===\n";
+		std::vector<double> dummy;
+		FeatureData featureData = promptNormOrStandFeatures(dummy);
+
+		auto points = Projection::getOrComputeEmbedding(featureData.features, featureData.labels, "tsne_embedding.csv");
+		if (!points.empty())
+		{
+			Projection::runScatterplot(points, paths);
+		}
 	}
 	
     return 0;
