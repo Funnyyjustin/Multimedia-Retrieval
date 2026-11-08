@@ -9,6 +9,7 @@
 #include <fstream>
 #include <omp.h>
 #include <cstdio>
+#include <atomic>
 #include <cmath>
 
 #include "globals.h"
@@ -338,13 +339,20 @@ std::vector<double> featureExtract(Mesh& mesh)
 
 void featureExtraction(std::vector<Mesh>& meshes, std::vector<std::vector<double>>& elem_desc)
 {
-    //std::vector<std::vector<double>> vec;
+    int total = static_cast<int>(meshes.size());
+    elem_desc.resize(total);
+    std::atomic<int> completed{ 0 };
 
-    for (std::size_t i = 0, e = meshes.size(); i != e; ++i)
+    #pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < total; ++i)
     {
-        std::cout << "extracting features for mesh: " << i << "/" << meshes.size() << std::endl;
-        elem_desc.push_back(featureExtract(meshes[i]));
-    }
+        elem_desc[i] = featureExtract(meshes[i]);
 
-    //return vec;
+        int done = ++completed;
+        if (done % 50 == 0 || done == total)
+        {
+            #pragma omp critical
+            std::cout << "[Feature Extraction] Completed " << done << " / " << total << " meshes.\n";
+        }
+    }
 }

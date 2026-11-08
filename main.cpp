@@ -405,7 +405,7 @@ std::vector<Mesh> parseDatabase(fs::path path)
 
     std::cout << "Parsing " << total << " files in parallel...\n";
 
-    //#pragma omp parallel for schedule(dynamic)
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         Parser p;
@@ -415,7 +415,7 @@ std::vector<Mesh> parseDatabase(fs::path path)
         int done = ++parsedCount;
         if (done % 100 == 0 || done == total)
         {
-            //#pragma omp critical
+            #pragma omp critical
             std::cout << "[Parsing] Completed " << done << " / " << total << " files.\n";
         }
     }
@@ -501,7 +501,7 @@ void resampleMeshes(std::vector<Mesh>& meshes, int minVert = minVertCount, int m
 
     std::atomic<int> completed{0};
 
-    //#pragma omp parallel for schedule(dynamic)
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         resampleMesh(meshes[i], minVert, maxVert);
@@ -509,7 +509,7 @@ void resampleMeshes(std::vector<Mesh>& meshes, int minVert = minVertCount, int m
         int done = ++completed;
         if (done % 20 == 0 || done == total)
         {
-            //#pragma omp critical
+            #pragma omp critical
             std::cout << "[Resampling] Completed " << done << " / " << total << " meshes (" << (done * 100 / total) << "%)\n";
         }
     }
@@ -624,7 +624,7 @@ void precomputeMeshes(std::vector<Mesh>& meshes)
     int total = static_cast<int>(meshes.size());
     std::cout << "Precomputing " << total << " meshes in parallel...\n";
 
-    //#pragma omp parallel for schedule(dynamic)
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         precomputeMesh(meshes[i]);
@@ -938,7 +938,7 @@ void normalizeMeshes(std::vector<Mesh>& meshes)
     int total = static_cast<int>(meshes.size());
     std::cout << "Normalizing " << total << " meshes in parallel...\n";
 
-    //#pragma omp parallel for schedule(dynamic)
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < total; ++i)
     {
         normalizeMesh(meshes[i]);
@@ -1362,10 +1362,18 @@ int main()
         std::vector<std::vector<double>> elem_desc;
         featureExtraction(meshes, elem_desc);
         
-        promptNormOrStandard(elem_desc);
+        // save raw features
+        exportFeaturesToCSV(meshes, elem_desc, "raw_features.csv");
+        
+        // create and save min-max normalized features
+        auto norm_desc = elem_desc;
+        normalizeFeatures(norm_desc);
+        exportFeaturesToCSV(meshes, norm_desc, fullFeaturesNormFilePath.string());
 
-        // Prompt to save feature vectors to CSV
-        promptSaveFeatures(meshes, elem_desc);
+        // create and save z-score normalized features
+        auto stand_desc = elem_desc;
+        standardizeFeatures(stand_desc);
+        exportFeaturesToCSV(meshes, stand_desc, fullFeaturesStandFilePath.string());
     }
     
     // Histogram mode
