@@ -222,7 +222,7 @@ void exportFeaturesToCSV(const std::vector<Mesh>& meshes, const std::vector<std:
 
     // Build CSV Header
     file << "Shape id;Class";
-    if (features[0].size() == 106)
+    if (features[0].size() == numFeatures)
     {
         file << ";Surface Area;Compactness;Rectangularity;Diameter;Convexity;Eccentricity";
         for (int i = 0; i < numHistogramBins; ++i) file << ";A3_" << i;

@@ -63,7 +63,7 @@ std::pair<double, double> computeConvexHullAreaAndVolume(const Mesh& mesh)
         fo << v.x() << " " << v.y() << " " << v.z() << "\n";
     }
     
-
+    fo.close();
     // use qhull
     std::string qhullExe = "qhull.exe";
     if (!std::filesystem::exists(qhullExe) && std::filesystem::exists("qhull\\bin\\qhull.exe"))
