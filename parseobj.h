@@ -92,19 +92,29 @@ public:
 					string skip, word;
 					l >> skip; // Skip "f"
 
-					Face face;
+					std::vector<int> polyIndices;
 					while (l >> word)
 					{
 						std::size_t pos = word.find('/');
 						int index = std::stoi(word.substr(0, pos)) - 1; // 1-indexed to 0-indexed
-						face.v.push_back(index);
+						polyIndices.push_back(index);
 					}
 
-					if (onlyTri && face.v.size() > 3) onlyTri = false;
-					if (onlyQuad && face.v.size() < 4) onlyQuad = false;
+					if (polyIndices.size() < 3)
+						continue;
+					
+					if (onlyTri && polyIndices.size() > 3) onlyTri = false;
+					if (onlyQuad && polyIndices.size() < 4) onlyQuad = false;
 
-					faces.push_back(face);
+					// split the face into triangles
+					for (size_t i = 1; i + 1 < polyIndices.size(); ++i)
+					{
+						Face triFace;
+						triFace.v = { polyIndices[0], polyIndices[i], polyIndices[i + 1] };
+						faces.push_back(std::move(triFace));
+					}
 				}
+
 			}
 		}
 

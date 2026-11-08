@@ -725,22 +725,59 @@ void scaleUniformly(Mesh& input)
     }
 }
 
+// calculate area weighted covariance matrix for all triangles
+glm::dmat3 computeAreaWeightedCovariance(const Mesh& input)
+{
+    glm::dmat3 covMat(0.0);
+    double totalArea = 0.0;
+    
+    for (const auto& f : input.faces)
+    {
+        if (f.v.size() < 3 || f.area <= 0.0 || std::isnan(f.area))
+            continue;
+        const Point3& p0 = input.vertices[f.v[0]];
+        const Point3& p1 = input.vertices[f.v[1]];
+        const Point3& p2 = input.vertices[f.v[2]];
+        const Point3& c = f.centroid;
+        
+        double w = f.area;
+        totalArea += w;
+        
+        // Quadratic integral over the triangle
+        for (int row = 0; row < 3; ++row)
+        {
+            for (int col = 0; col < 3; ++col)
+            {
+                double term = (p0.e[row] * p0.e[col] + p1.e[row] * p1.e[col] + p2.e[row] * p2.e[col] + 9.0 * c.e[row] * c.e[col]) / 12.0;
+                covMat[col][row] += w * term;
+            }
+        }
+    }
+    
+    // fallback
+    if (totalArea <= 1e-12)
+    {
+        std::vector<glm::dvec3> v;
+        v.reserve(input.vertices.size());
+        for (const auto& vert : input.vertices )
+            v.emplace_back(vert.x(), vert.y(), vert.z());
+        glm::dvec3 C(0.0, 0.0, 0.0);
+        return glm::computeCovarianceMatrix(v.data(), v.size(), C);
+    }
+    
+    return covMat / totalArea;
+}
+
 void alignAxes(Mesh& input)
 {
     //std::cout << "Rotating..\n";
+    if (input.vertices.empty()) return;
 
     // Step 1: Compute Covariance Matrix (3x3)
     // Can be calculated by first putting all vertices in a Nx3 matrix V (so each row of the matrix is a xyz of a vertex in the shape)
     // Then we can get C = (1 / N) * (V^t * V), where N is the number of vertices
     
-    std::vector<glm::dvec3> V;
-    V.reserve(input.vertices.size());
-    for (const auto& v : input.vertices)
-    {
-        V.emplace_back(v.x(), v.y(), v.z());
-    }
-    
-    glm::dvec3 C(0.0, 0.0, 0.0);
+    glm::dmat3 covMat = computeAreaWeightedCovariance(input);
     
     // Step 2: Perform Eigen decomposition
     // We have to solve det(C - l * I) = 0, where I is the identity matrix and l is lambda --> solve for lambda
@@ -749,8 +786,6 @@ void alignAxes(Mesh& input)
     // where li is the ith eigenvalue, and vi is the corresponding eigenvector.
     // We can use Gaussian elimination for this. After applying that, we have to normalize the result.
     // Largest eigenvalue means that its corresponding eigenvector represents the longest dimension of the shape --> same principal for the other values/vectors
-    
-    glm::dmat3 covMat = glm::computeCovarianceMatrix(V.data(), V.size(), C);
     
     glm::dvec3 evals(1.0, 1.0, 1.0);
     glm::dmat3 evecs; 
@@ -778,59 +813,28 @@ void alignAxes(Mesh& input)
     
     //Rotation Matrix
     glm::dmat3 R(e1, e2, e3);
+    glm::dmat3 Rt = glm::transpose(R);
     
-    // Rotate the vertices 
     for (auto& v : input.vertices) {
         glm::dvec3 p(v.x(), v.y(), v.z());
-        glm::dvec3 pRot = glm::transpose(R) * p; // oftewel dot-product met e1, e2, e3
+        glm::dvec3 pRot = Rt * p;
         v = Point3(pRot.x, pRot.y, pRot.z);
     }
 
-    for (auto& f : input.faces)
-    {
+    for (auto& f : input.faces) {
         auto& c = f.centroid;
         glm::dvec3 p(c.x(), c.y(), c.z());
-        glm::dvec3 pRot = glm::transpose(R) * p;
+        glm::dvec3 pRot = Rt * p;
         c = Point3(pRot.x, pRot.y, pRot.z);
     }
 
-    // After rotation, we calculate the new eigenvectors
-    std::vector<glm::dvec3> V_new;
-    V_new.reserve(input.vertices.size());
-    for (const auto& v : input.vertices)
-    {
-        V_new.emplace_back(v.x(), v.y(), v.z());
-    }
+    // save the eigenvalues
+    input.ev1 = Vec3(1.0, 0.0, 0.0);
+    input.ev2 = Vec3(0.0, 1.0, 0.0);
+    input.ev3 = Vec3(0.0, 0.0, 1.0);
+    input.eigenvalues = Vec3(evals[0], evals[1], evals[2]);
 
-    glm::dvec3 C_new(0.0, 0.0, 0.0);
-
-    glm::dmat3 covMat_new = glm::computeCovarianceMatrix(V_new.data(), V_new.size(), C_new);
-
-    glm::dvec3 evals_new(1.0, 1.0, 1.0);
-    glm::dmat3 evecs_new;
-    int count_new = glm::findEigenvaluesSymReal(covMat_new, evals_new, evecs_new);
-    if (count_new != 3 || std::isnan(evals_new[0]) || std::isnan(evals_new[1]) || std::isnan(evals_new[2])) {
-        input.eigenvalues = Vec3(1.0, 1.0, 1.0);
-        return;
-    }
-
-    // Sort from largest to smallest (evlas[0] >= evals[1] >= evals[2])
-    glm::sortEigenvalues(evals_new, evecs_new);
-
-    glm::dvec3 e1_new = glm::normalize(evecs_new[0]);
-    glm::dvec3 e2_new = glm::normalize(evecs_new[1]);
-    glm::dvec3 e3_new = glm::normalize(evecs_new[2]);
-
-    if (glm::dot(glm::cross(e1_new, e2_new), e3_new) < 0.0) {
-        e3_new = -e3_new;
-    }
-
-    input.ev1 = Vec3(e1_new.x, e1_new.y, e1_new.z);
-    input.ev2 = Vec3(e2_new.x, e2_new.y, e2_new.z);
-    input.ev3 = Vec3(e3_new.x, e3_new.y, e3_new.z);
-    input.eigenvalues = Vec3(evals_new[0], evals_new[1], evals_new[2]);
-    
-    // Update old AABB into new one
+    // Update AABB
     calculateAABB(input);
     if (application_mode == 1)
     {
@@ -861,59 +865,54 @@ void flipShape(Mesh& input)
     float fy = 0;
     float fz = 0;
 
-    for (auto face : input.faces)
+    // calculate for each axis area weighted momentum
+    for (const auto& face : input.faces)
     {
-        float centersum[3]{ 0, 0, 0 };
-        for (int a : face.v)
-        {
-            centersum[0] += input.vertices[a].x();
-            centersum[1] += input.vertices[a].y();
-            centersum[2] += input.vertices[a].z();
-        }
-
-        for (int i = 0; i < 3; i++) centersum[i] /= face.v.size();
+        double w = (face.area > 0.0 && !std::isnan(face.area)) ? face.area : 0.0;
+        
+        double cx = face.centroid.x();
+        double cy = face.centroid.y();
+        double cz = face.centroid.z();
 
         // Then, for x, y and z, we calculate fi = sum_t sign(C t,i)(C t,i)^2
-        fx += sign(centersum[0]) * pow(centersum[0], 2);
-        fy += sign(centersum[1]) * pow(centersum[1], 2);
-        fz += sign(centersum[2]) * pow(centersum[2], 2);
+        fx += w * sign(static_cast<float>(cx)) * (cx * cx);
+        fy += w * sign(static_cast<float>(cy)) * (cy * cy);
+        fz += w * sign(static_cast<float>(cz)) * (cz * cz);
     }
+    
+    int sfx = sign(static_cast<float>(fx));
+    int sfy = sign(static_cast<float>(fy));
+    int sfz = sign(static_cast<float>(fz));
 
     for (Point3& v : input.vertices)
     {
-        v = Point3(sign(fx) * v.x(), sign(fy) * v.y(), sign(fz) * v.z());
+        v = Point3(sfx * v.x(), sfy * v.y(), sfz * v.z());
     }
 
     for (auto& f : input.faces)
     {
         auto& c = f.centroid;
-        c = Point3(sign(fx) * c.x(), sign(fy) * c.y(), sign(fz) * c.z());
+        c = Point3(sfx * c.x(), sfy * c.y(), sfz * c.z());
     }
 
     // Calculate new signs for each axis
     fx = 0; fy = 0; fz = 0;
 
-    for (auto face : input.faces)
+    for (const auto& face : input.faces)
     {
-        float centersum[3]{ 0, 0, 0 };
-        for (int a : face.v)
-        {
-            centersum[0] += input.vertices[a].x();
-            centersum[1] += input.vertices[a].y();
-            centersum[2] += input.vertices[a].z();
-        }
+        double w = (face.area > 0.0 && !std::isnan(face.area)) ? face.area : 0.0;
+        double cx = face.centroid.x();
+        double cy = face.centroid.y();
+        double cz = face.centroid.z();
 
-        for (int i = 0; i < 3; i++) centersum[i] /= face.v.size();
-
-        // Then, for x, y and z, we calculate fi = sum_t sign(C t,i)(C t,i)^2
-        fx += sign(centersum[0]) * pow(centersum[0], 2);
-        fy += sign(centersum[1]) * pow(centersum[1], 2);
-        fz += sign(centersum[2]) * pow(centersum[2], 2);
+        fx += w * sign(static_cast<float>(cx)) * (cx * cx);
+        fy += w * sign(static_cast<float>(cy)) * (cy * cy);
+        fz += w * sign(static_cast<float>(cz)) * (cz * cz);
     }
 
-    input.sx = sign(fx);
-    input.sy = sign(fy);
-    input.sz = sign(fz);
+    input.sx = sign(static_cast<float>(fx));
+    input.sy = sign(static_cast<float>(fy));
+    input.sz = sign(static_cast<float>(fz));
 
     // Update old AABB into new one
     calculateAABB(input);
