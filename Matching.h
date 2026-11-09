@@ -283,6 +283,3 @@ std::vector<std::vector<float>> makeDistanceVector(const std::vector<std::vector
 
 	return distances;
 }
-
-
-//

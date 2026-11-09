@@ -4,25 +4,42 @@
 #include <filesystem>
 #include <iostream>
 #include <fstream>
-#include <sstream>
-#include <type_traits>
+#include <vector>
+#include <string>
+#include <cstdlib>
 
 using string = std::string;
 
 class Parser 
 {
-	// Use links given by Telea with code examples of parser 
-	// OFF formatting: https://shape.cs.princeton.edu/benchmark/documentation/off_format.html
 public:
 	Mesh parseOFF(const std::string& path) 
 	{
-		std::ifstream file(path);
+		std::ifstream file(path, std::ios::binary | std::ios::ate);
+		if (!file.is_open())
+		{
+			return Mesh({}, {});
+		}
 
-		//std::vector<Primitive> prims;
-		//std::vector<float> trivertsgl;
+		std::streamsize size = file.tellg();
+		if (size <= 0)
+		{
+			return Mesh({}, {});
+		}
+		file.seekg(0, std::ios::beg);
+
+		std::vector<char> buffer(static_cast<size_t>(size) + 1);
+		if (!file.read(buffer.data(), size))
+		{
+			return Mesh({}, {});
+		}
+		buffer[static_cast<size_t>(size)] = '\0';
+		file.close();
+
 		std::vector<Point3> vertices;
-		//std::vector<Point3> normals;
 		std::vector<Face> faces;
+		vertices.reserve(static_cast<size_t>(size) / 60);
+		faces.reserve(static_cast<size_t>(size) / 40);
 
 		float minX = INFINITY; float maxX = -INFINITY;
 		float minY = INFINITY; float maxY = -INFINITY;
@@ -31,82 +48,62 @@ public:
 		bool onlyTri = true;
 		bool onlyQuad = true;
 
-		if (file.is_open())
+		char* p = buffer.data();
+		char* end = p + size;
+
+		std::vector<int> polyIndices;
+		polyIndices.reserve(8);
+
+		while (p < end)
 		{
-			while (file)
+			// Skip leading horizontal whitespace
+			while (p < end && (*p == ' ' || *p == '\t' || *p == '\r')) p++;
+			if (p >= end) break;
+
+			if (*p == 'v' && *(p + 1) == ' ')
 			{
-				string line = " ";
-				std::getline(file, line);
+				p += 2;
+				char* next = nullptr;
+				float a = std::strtof(p, &next); p = next;
+				float b = std::strtof(p, &next); p = next;
+				float c = std::strtof(p, &next); p = next;
 
-				if (line.substr(0, 2) == "v ")
+				if (a > maxX) maxX = a; if (a < minX) minX = a;
+				if (b > maxY) maxY = b; if (b < minY) minY = b;
+				if (c > maxZ) maxZ = c; if (c < minZ) minZ = c;
+
+				vertices.push_back(Point3(a, b, c));
+			}
+			else if (*p == 'f' && *(p + 1) == ' ')
+			{
+				p += 2;
+				polyIndices.clear();
+
+				while (p < end && *p != '\n' && *p != '\r')
 				{
-					std::istringstream l(line);
-					string word;
+					while (p < end && (*p == ' ' || *p == '\t')) p++;
+					if (p >= end || *p == '\n' || *p == '\r') break;
 
-					// Skip the first word: "v"
-					string skip;
-					l >> skip;
-
-					l >> word;
-					float a = std::stof(word);
-					if (a > maxX) maxX = a;
-					if (a < minX) minX = a;
-					
-					l >> word;
-					float b = std::stof(word);
-					if (b > maxY) maxY = b;
-					if (b < minY) minY = b;
-
-					l >> word;
-					float c = std::stof(word);
-					if (c > maxZ) maxZ = c;
-					if (c < minZ) minZ = c;
-
-					vertices.push_back(Point3(a, b, c));
-				}
-				else if (line.substr(0, 2) == "vn")
-				{
-					continue;
-					/*
-					std::istringstream l(line);
-					string word;
-					
-					// Skip the first word: "vn"
-					string skip;
-					l >> skip;
-
-					l >> word;
-					float a = std::stof(word);
-
-					l >> word;
-					float b = std::stof(word);
-
-					l >> word;
-					float c = std::stof(word);
-
-					normals.push_back(Point3(a, b, c));*/
-				}
-				else if (line.substr(0, 2) == "f ")
-				{
-					std::istringstream l(line);
-					string skip, word;
-					l >> skip; // Skip "f"
-
-					std::vector<int> polyIndices;
-					while (l >> word)
+					char* next = nullptr;
+					long idx = std::strtol(p, &next, 10);
+					if (next == p)
 					{
-						std::size_t pos = word.find('/');
-						int index = std::stoi(word.substr(0, pos)) - 1; // 1-indexed to 0-indexed
-						polyIndices.push_back(index);
-					}
-
-					if (polyIndices.size() < 3)
+						// Skip non-digit token
+						while (p < end && *p != ' ' && *p != '\t' && *p != '\n' && *p != '\r') p++;
 						continue;
-					
+					}
+					p = next;
+					polyIndices.push_back(static_cast<int>(idx - 1));
+
+					// Skip texture/normal component (e.g. /12/34)
+					while (p < end && *p != ' ' && *p != '\t' && *p != '\n' && *p != '\r') p++;
+				}
+
+				if (polyIndices.size() >= 3)
+				{
 					if (onlyTri && polyIndices.size() > 3) onlyTri = false;
 					if (onlyQuad && polyIndices.size() < 4) onlyQuad = false;
 
-					// split the face into triangles
 					for (size_t i = 1; i + 1 < polyIndices.size(); ++i)
 					{
 						Face triFace;
@@ -114,11 +111,12 @@ public:
 						faces.push_back(std::move(triFace));
 					}
 				}
-
 			}
-		}
 
-		file.close();
+			// Advance to next line
+			while (p < end && *p != '\n') p++;
+			if (p < end && *p == '\n') p++;
+		}
 
 		Mesh out(std::move(vertices), std::move(faces));
 		out.maxPoint = Point3(maxX, maxY, maxZ);

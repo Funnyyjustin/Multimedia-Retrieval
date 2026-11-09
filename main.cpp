@@ -1310,30 +1310,72 @@ void renderObjects(std::vector<int> ids)
     }
 }
 
+#include "ui.h"
+
 // Main functions
 
-int main()
+int main(int argc, char* argv[])
 {
+    // If launched directly from x64\Debug or x64\Release, auto-set working directory to the project root
+    if (argc > 0 && argv[0]) {
+        try {
+            fs::path exeDir = fs::absolute(argv[0]).parent_path();
+            if (fs::exists(exeDir / "ObjectFiles")) {
+                fs::current_path(exeDir);
+            } else if (fs::exists(exeDir.parent_path() / "ObjectFiles")) {
+                fs::current_path(exeDir.parent_path());
+            } else if (fs::exists(exeDir.parent_path().parent_path() / "ObjectFiles")) {
+                fs::current_path(exeDir.parent_path().parent_path());
+            }
+        } catch (...) {}
+    }
+
     std::vector<int> obj_counts = makeidpathcsv();
     paths = readPaths();
 
     omp_set_num_threads(omp_get_max_threads());
 
-    std::cout << "Multimedia Retrieval tool\n";
-    std::cout << "Select mode to begin: \n";
-    std::cout << "1. Rendering mode\n";
-    std::cout << "2. Feature extraction mode\n";
-    std::cout << "3. Histogram export mode\n";
-    std::cout << "4. Outlier mode \n";
-    std::cout << "5. Query mode \n";
-    std::cout << "6. Evaluation mode \n";
-    std::cout << "7. project mode \n";
+    if (argc > 1)
+    {
+        application_mode = std::atoi(argv[1]);
+    }
+    else
+    {
+        std::cout << "Multimedia Retrieval tool\n";
+        std::cout << "Select mode to begin (press 0 for ImGui Demo, default): \n";
+        std::cout << "0. Interactive GUI Demo Mode (ImGui - Fast Precomputed)\n";
+        std::cout << "1. Rendering mode\n";
+        std::cout << "2. Feature extraction mode\n";
+        std::cout << "3. Histogram export mode\n";
+        std::cout << "4. Outlier mode (Deprecated) \n";
+        std::cout << "5. Query mode \n";
+        std::cout << "6. Evaluation mode \n";
+        std::cout << "7. project mode \n";
+        std::cout << "8. Interactive GUI Demo Mode (ImGui)\n";
 
-    std::cin >> application_mode;
+        std::string line;
+        if (std::getline(std::cin, line) && !line.empty())
+        {
+            try {
+                application_mode = std::stoi(line);
+            } catch (...) {
+                application_mode = 0;
+            }
+        }
+        else
+        {
+            application_mode = 0; // Default to GUI Demo
+        }
+    }
 
+    // Interactive ImGui Demo Mode
+    if (application_mode == 0 || application_mode == 8)
+    {
+        DemoUI::runDemoUI(paths, obj_counts);
+    }
 
     // Rendering mode
-    if (application_mode == 1)
+    else if (application_mode == 1)
     {
         promptRenderObject();
     }
