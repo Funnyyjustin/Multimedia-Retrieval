@@ -31,27 +31,9 @@ struct ShapeRecord {
     std::string fileName;
     std::string className;
 
-    // Pre-resampling stats (from histograms.csv)
-    int origFaces = 0;
-    int origVerts = 0;
-    int origType = 1; // 0 = quads, 1 = tris, 2 = mix
-    float zFaces = 0.0f;
-    float zVerts = 0.0f;
-
-    // Post-resampling / pre-normalization stats (from full_features_1.csv)
-    int resampledFaces = 0;
-    int resampledVerts = 0;
-    float preNormBaryDist = 0.0f;
-    float preNormMaxScale = 1.0f;
-
-    // Post-normalization stats (from flipandrotate.csv)
-    int normFaces = 0;
-    int normVerts = 0;
-    float normVolume = 0.0f;
-    float normArea = 0.0f;
-    float normBaryX = 0.0f, normBaryY = 0.0f, normBaryZ = 0.0f;
-    float normScaleX = 1.0f, normScaleY = 1.0f, normScaleZ = 1.0f;
-    float normSignX = 1.0f, normSignY = 1.0f, normSignZ = 1.0f;
+    // Outlier & deviation metrics (computed directly from standardized database features)
+    float maxZScore = 0.0f;
+    std::string maxZFeatureName;
 };
 
 struct ClassInfo {
@@ -61,9 +43,8 @@ struct ClassInfo {
     std::vector<int> shapeIds;
     float color[3] = { 0.3f, 0.7f, 1.0f };
 
-    // Precomputed evaluation AUCs
+    // Evaluation AUCs
     float aucStd = 0.0f;
-    float aucImp = 0.0f;
     float aucAnn = 0.0f;
 };
 
@@ -182,15 +163,15 @@ public:
     StandardizationData stdData;
     NormalizationData normData;
 
-    // Precomputed distributions for Tab 2 (Database Preprocessing Verification)
-    std::vector<float> histOrigVertsBins;
-    std::vector<float> histResampledVertsBins;
-    std::vector<float> histPreBaryBins;
-    std::vector<float> histPostBaryBins;
-    std::vector<float> histPreScaleBins;
-    std::vector<float> histPostScaleBins;
-    float avgOrigVerts = 0.0f, avgOrigFaces = 0.0f;
-    float avgResampledVerts = 0.0f, avgResampledFaces = 0.0f;
+    // Feature distributions for Tab 2 (computed from raw_features.csv)
+    std::vector<float> histSurfaceAreaBins;
+    std::vector<float> histCompactnessBins;
+    std::vector<float> histDiameterBins;
+    std::vector<float> histEccentricityBins;
+    float avgSurfaceArea = 0.0f;
+    float avgCompactness = 0.0f;
+    float avgDiameter = 0.0f;
+    float avgEccentricity = 0.0f;
     std::vector<int> outlierHighVerts;
     std::vector<int> outlierLowVerts;
 
@@ -199,7 +180,6 @@ public:
 
     // Precomputed Evaluations (Mode 6)
     EvalCurve evalStd;
-    EvalCurve evalImp;
     EvalCurve evalAnn;
 
     // Fast ANN kd-tree
@@ -244,6 +224,12 @@ public:
     int labLoadedShapeId = -1;
     bool labIsNormalized = true;
     std::string labStatusText = "Normalized (Translated + PCA Aligned + Flipped + Scaled)";
+    int labOrigVerts = 0;
+    int labOrigFaces = 0;
+    float labOrigBaryDist = 0.0f;
+    float labOrigMaxScale = 1.0f;
+    float labOrigArea = 0.0f;
+    float labOrigVolume = 0.0f;
 
     // Camera state for Main 3D Viewport
     float camDist = 1.85f;
@@ -290,7 +276,6 @@ public:
 
     // Tab 5 (Evaluation) state
     bool showEvalStd = true;
-    bool showEvalImp = true;
     bool showEvalAnn = true;
     bool showEvalSelectedClass = true;
     bool plotStandardROC = false; // default = false: Specificity (TNR, CSV Plot), true = 1 - Specificity
@@ -398,7 +383,7 @@ private:
     }
 
     void loadDatabaseAndFeatures(const std::vector<std::string>& pathList, const std::vector<int>& objCounts) {
-        featRaw = readFeatures("raw_features.csv");
+        featRaw = readFeatures(rawFeaturesFilePath.string());
         featStand = readFeatures(fullFeaturesStandFilePath);
         featNorm = readFeatures(fullFeaturesNormFilePath);
         stdData = readStandardizationData(standardizationDataFilePath.string());
@@ -460,162 +445,96 @@ private:
 
     void loadPreprocessingStats() {
         int N = static_cast<int>(shapes.size());
-        std::vector<float> origVertsVec;
-        std::vector<float> resampledVertsVec;
-        std::vector<float> preBaryVec;
-        std::vector<float> postBaryVec;
-        std::vector<float> preScaleVec;
-        std::vector<float> postScaleVec;
+        if (N == 0) return;
 
-        // 1. Read histograms.csv (Original Faces & Vertices)
-        {
-            std::ifstream f(histogramsFilePath);
-            if (f.is_open()) {
-                std::string line;
-                std::getline(f, line);
-                double sumF = 0.0, sumV = 0.0;
-                int cnt = 0;
-                while (std::getline(f, line)) {
-                    if (line.empty()) continue;
-                    std::stringstream ss(line);
-                    std::string idS, fS, vS, tS;
-                    std::getline(ss, idS, ';');
-                    std::getline(ss, fS, ';');
-                    std::getline(ss, vS, ';');
-                    std::getline(ss, tS, ';');
-                    int id = static_cast<int>(safeStof(idS, -1));
-                    if (id >= 0 && id < N) {
-                        shapes[id].origFaces = static_cast<int>(safeStof(fS));
-                        shapes[id].origVerts = static_cast<int>(safeStof(vS));
-                        shapes[id].origType = static_cast<int>(safeStof(tS, 1));
-                        sumF += shapes[id].origFaces;
-                        sumV += shapes[id].origVerts;
-                        origVertsVec.push_back(static_cast<float>(shapes[id].origVerts));
-                        cnt++;
-                    }
-                }
-                if (cnt > 0) {
-                    avgOrigFaces = static_cast<float>(sumF / cnt);
-                    avgOrigVerts = static_cast<float>(sumV / cnt);
-                    double varF = 0.0, varV = 0.0;
-                    for (int i = 0; i < N; ++i) {
-                        varF += (shapes[i].origFaces - avgOrigFaces) * (shapes[i].origFaces - avgOrigFaces);
-                        varV += (shapes[i].origVerts - avgOrigVerts) * (shapes[i].origVerts - avgOrigVerts);
-                    }
-                    float sdF = std::sqrt(static_cast<float>(varF / cnt));
-                    float sdV = std::sqrt(static_cast<float>(varV / cnt));
-                    for (int i = 0; i < N; ++i) {
-                        shapes[i].zFaces = (sdF > 1e-6f) ? std::fabs(shapes[i].origFaces - avgOrigFaces) / sdF : 0.0f;
-                        shapes[i].zVerts = (sdV > 1e-6f) ? std::fabs(shapes[i].origVerts - avgOrigVerts) / sdV : 0.0f;
-                    }
-                }
+        std::vector<float> areaVec;
+        std::vector<float> compVec;
+        std::vector<float> diamVec;
+        std::vector<float> eccVec;
+
+        double sumArea = 0.0, sumComp = 0.0, sumDiam = 0.0, sumEcc = 0.0;
+
+        // Extract elementary feature distributions from featRaw (raw_features.csv)
+        int numFeatRows = static_cast<int>(featRaw.features.size());
+        for (int i = 0; i < N && i < numFeatRows; ++i) {
+            const auto& row = featRaw.features[i];
+            if (row.size() >= 6) {
+                float a = static_cast<float>(row[0]);
+                float c = static_cast<float>(row[1]);
+                float d = static_cast<float>(row[3]);
+                float e = static_cast<float>(row[5]);
+                areaVec.push_back(a);
+                compVec.push_back(c);
+                diamVec.push_back(d);
+                eccVec.push_back(e);
+                sumArea += a; sumComp += c; sumDiam += d; sumEcc += e;
             }
         }
 
-        // Build sorted outlier lists
-        std::vector<int> allIds(N);
-        for (int i = 0; i < N; ++i) allIds[i] = i;
-        std::sort(allIds.begin(), allIds.end(), [&](int a, int b) {
-            return shapes[a].zVerts > shapes[b].zVerts;
+        if (!areaVec.empty()) {
+            avgSurfaceArea = static_cast<float>(sumArea / areaVec.size());
+            avgCompactness = static_cast<float>(sumComp / areaVec.size());
+            avgDiameter = static_cast<float>(sumDiam / areaVec.size());
+            avgEccentricity = static_cast<float>(sumEcc / areaVec.size());
+
+            histSurfaceAreaBins = makeHistogramBins(areaVec, 30, 0.0f, 15.0f);
+            histCompactnessBins = makeHistogramBins(compVec, 30, 0.0f, 50.0f);
+            histDiameterBins = makeHistogramBins(diamVec, 30, 0.0f, 3.0f);
+            histEccentricityBins = makeHistogramBins(eccVec, 30, 0.0f, 2.5f);
+        }
+
+        // Outlier detection: compute maximum absolute z-score deviation across features from featStand
+        const auto& standRows = featStand.features;
+        const char* elemNames[6] = { "Surface Area", "Compactness", "Rectangularity", "Diameter", "Convexity", "Eccentricity" };
+
+        struct OutlierCandidate {
+            int id;
+            float maxZ;
+            std::string featureName;
+        };
+        std::vector<OutlierCandidate> candidates;
+
+        for (int i = 0; i < N && i < (int)standRows.size(); ++i) {
+            const auto& row = standRows[i];
+            float maxZ = 0.0f;
+            std::string feat = "Surface Area";
+            for (int col = 0; col < 6 && col < (int)row.size(); ++col) {
+                float z = std::fabs(static_cast<float>(row[col]));
+                if (z > maxZ) {
+                    maxZ = z;
+                    feat = elemNames[col];
+                }
+            }
+            shapes[i].maxZScore = maxZ;
+            shapes[i].maxZFeatureName = feat;
+            candidates.push_back({ i, maxZ, feat });
+        }
+
+        std::sort(candidates.begin(), candidates.end(), [](const OutlierCandidate& a, const OutlierCandidate& b) {
+            return a.maxZ > b.maxZ;
         });
-        for (int i = 0; i < std::min(N, 40); ++i) {
-            if (shapes[allIds[i]].zVerts >= 2.0f) outlierHighVerts.push_back(allIds[i]);
-        }
-        for (int i = N - 1; i >= std::max(0, N - 20); --i) {
-            outlierLowVerts.push_back(allIds[i]);
-        }
 
-        // 2. Read full_features_1.csv (After Resampling, Before Normalization)
-        {
-            std::ifstream f("full_features_1.csv");
-            if (f.is_open()) {
-                std::string line;
-                std::getline(f, line);
-                while (std::getline(f, line)) {
-                    if (line.empty()) continue;
-                    std::stringstream ss(line);
-                    std::string tok;
-                    std::vector<std::string> cols;
-                    while (std::getline(ss, tok, ';')) cols.push_back(tok);
-                    if (cols.size() >= 12) {
-                        int id = static_cast<int>(safeStof(cols[0], -1));
-                        if (id >= 0 && id < N) {
-                            shapes[id].resampledFaces = static_cast<int>(safeStof(cols[1]));
-                            shapes[id].resampledVerts = static_cast<int>(safeStof(cols[2]));
-                            float bx = safeStof(cols[6]), by = safeStof(cols[7]), bz = safeStof(cols[8]);
-                            float sx = safeStof(cols[9]), sy = safeStof(cols[10]), sz = safeStof(cols[11]);
-                            shapes[id].preNormBaryDist = std::sqrt(bx * bx + by * by + bz * bz);
-                            shapes[id].preNormMaxScale = std::max({ sx, sy, sz });
-                            preBaryVec.push_back(shapes[id].preNormBaryDist);
-                            preScaleVec.push_back(shapes[id].preNormMaxScale);
-                        }
-                    }
-                }
+        outlierHighVerts.clear();
+        outlierLowVerts.clear();
+        for (size_t i = 0; i < std::min((size_t)40, candidates.size()); ++i) {
+            if (candidates[i].maxZ >= 2.0f) {
+                outlierHighVerts.push_back(candidates[i].id);
             }
         }
-
-        // 3. Read flipandrotate.csv (After Full Normalization)
-        {
-            std::ifstream f("flipandrotate.csv");
-            if (f.is_open()) {
-                std::string line;
-                std::getline(f, line);
-                double sumF = 0.0, sumV = 0.0;
-                int cnt = 0;
-                while (std::getline(f, line)) {
-                    if (line.empty()) continue;
-                    std::stringstream ss(line);
-                    std::string tok;
-                    std::vector<std::string> cols;
-                    while (std::getline(ss, tok, ';')) cols.push_back(tok);
-                    if (cols.size() >= 12) {
-                        int id = static_cast<int>(safeStof(cols[0], -1));
-                        if (id >= 0 && id < N) {
-                            shapes[id].normFaces = static_cast<int>(safeStof(cols[1]));
-                            shapes[id].normVerts = static_cast<int>(safeStof(cols[2]));
-                            shapes[id].normVolume = safeStof(cols[4]);
-                            shapes[id].normArea = safeStof(cols[5]);
-                            shapes[id].normBaryX = safeStof(cols[6]);
-                            shapes[id].normBaryY = safeStof(cols[7]);
-                            shapes[id].normBaryZ = safeStof(cols[8]);
-                            shapes[id].normScaleX = safeStof(cols[9]);
-                            shapes[id].normScaleY = safeStof(cols[10]);
-                            shapes[id].normScaleZ = safeStof(cols[11]);
-                            if (cols.size() >= 24) {
-                                shapes[id].normSignX = safeStof(cols[21], 1.0f);
-                                shapes[id].normSignY = safeStof(cols[22], 1.0f);
-                                shapes[id].normSignZ = safeStof(cols[23], 1.0f);
-                            }
-                            sumF += shapes[id].normFaces;
-                            sumV += shapes[id].normVerts;
-                            resampledVertsVec.push_back(static_cast<float>(shapes[id].normVerts));
-                            float bDist = std::sqrt(
-                                shapes[id].normBaryX * shapes[id].normBaryX +
-                                shapes[id].normBaryY * shapes[id].normBaryY +
-                                shapes[id].normBaryZ * shapes[id].normBaryZ);
-                            postBaryVec.push_back(bDist);
-                            postScaleVec.push_back(std::max({ shapes[id].normScaleX, shapes[id].normScaleY, shapes[id].normScaleZ }));
-                            cnt++;
-                        }
-                    }
-                }
-                if (cnt > 0) {
-                    avgResampledFaces = static_cast<float>(sumF / cnt);
-                    avgResampledVerts = static_cast<float>(sumV / cnt);
-                }
-            }
+        for (int i = static_cast<int>(candidates.size()) - 1; i >= std::max(0, static_cast<int>(candidates.size()) - 20); --i) {
+            outlierLowVerts.push_back(candidates[i].id);
         }
-
-        histOrigVertsBins = makeHistogramBins(origVertsVec, 30, 0.0f, 30000.0f);
-        histResampledVertsBins = makeHistogramBins(resampledVertsVec, 30, 0.0f, 15000.0f);
-        histPreBaryBins = makeHistogramBins(preBaryVec, 25, 0.0f, 2.0f);
-        histPostBaryBins = makeHistogramBins(postBaryVec, 25, 0.0f, 0.01f);
-        histPreScaleBins = makeHistogramBins(preScaleVec, 25, 0.0f, 2.0f);
-        histPostScaleBins = makeHistogramBins(postScaleVec, 25, 0.0f, 1.2f);
     }
 
     void loadTsneEmbedding() {
-        std::ifstream file("tsne_embedding.csv");
+        std::ifstream file(tsneEmbeddingFilePath);
+        if (!file.is_open()) {
+            if (!featStand.features.empty()) {
+                std::cout << "t-SNE embedding file not found. Generating tsne_embedding.csv on-the-fly...\n";
+                Projection::getOrComputeEmbedding(featStand.features, featStand.labels, tsneEmbeddingFilePath.string());
+                file.open(tsneEmbeddingFilePath);
+            }
+        }
         if (!file.is_open()) return;
 
         struct RawPt { int id; std::string label; double x, y; };
@@ -717,13 +636,11 @@ private:
     }
 
     void loadEvaluations() {
-        evalStd = parseEvalCSV("evaluation.csv", "evaluation_per_class.csv", "Standardized Linear Search");
-        evalImp = parseEvalCSV("Eval_after_improvements.csv", "Eval_after_improvements_per_class.csv", "After Improvements (Step k=10)");
-        evalAnn = parseEvalCSV("eval_ANN.csv", "eval_ANN_per_class.csv", "ANN kd-Tree (Hellinger Embedding)");
+        evalStd = parseEvalCSV(evalLinearFilePath.string(), evalLinearPerClassFilePath.string(), "Standardized Linear Search");
+        evalAnn = parseEvalCSV(evalANNFilePath.string(), evalANNPerClassFilePath.string(), "ANN kd-Tree (Hellinger Embedding)");
 
         for (auto& ci : classes) {
             if (evalStd.classAuc.count(ci.name)) ci.aucStd = evalStd.classAuc[ci.name];
-            if (evalImp.classAuc.count(ci.name)) ci.aucImp = evalImp.classAuc[ci.name];
             if (evalAnn.classAuc.count(ci.name)) ci.aucAnn = evalAnn.classAuc[ci.name];
         }
     }
@@ -917,6 +834,13 @@ public:
                 labLoadedShapeId = selectedShapeId;
                 labIsNormalized = true;
                 labStatusText = "Fully Normalized (Centered + PCA Aligned + Flipped + Unit Scaled)";
+                labOrigVerts = entry.numVerts;
+                labOrigFaces = entry.numFaces;
+                Point3 s = entry.maxPt - entry.minPt;
+                labOrigMaxScale = static_cast<float>(std::max({ s.x(), s.y(), s.z() }));
+                labOrigBaryDist = static_cast<float>(std::sqrt(entry.barycenter.x()*entry.barycenter.x() + entry.barycenter.y()*entry.barycenter.y() + entry.barycenter.z()*entry.barycenter.z()));
+                labOrigArea = static_cast<float>(loadedMeshes[i].area);
+                labOrigVolume = static_cast<float>(loadedMeshes[i].volume);
             }
         }
     }
@@ -952,6 +876,14 @@ public:
         labMesh.setLabel(shapes[shapeId].className);
         precomputeMesh(labMesh);
         calculateAABB(labMesh);
+
+        labOrigVerts = labMesh.vertsSize();
+        labOrigFaces = labMesh.primsSize();
+        labOrigBaryDist = static_cast<float>(std::sqrt(labMesh.barycenter.x()*labMesh.barycenter.x() + labMesh.barycenter.y()*labMesh.barycenter.y() + labMesh.barycenter.z()*labMesh.barycenter.z()));
+        Point3 rawScale = labMesh.maxPoint - labMesh.minPoint;
+        labOrigMaxScale = static_cast<float>(std::max({ rawScale.x(), rawScale.y(), rawScale.z() }));
+        labOrigArea = static_cast<float>(labMesh.area);
+        labOrigVolume = static_cast<float>(labMesh.volume);
 
         if (normalizeImmediately) {
             normalizeMesh(labMesh);
@@ -1282,8 +1214,8 @@ public:
             ImGui::BeginChild("ShapeList", ImVec2(0, 0), true);
             for (int sid : ci.shapeIds) {
                 char sLabel[128];
-                std::snprintf(sLabel, sizeof(sLabel), "#%d - %s (%d v)",
-                    sid, shapes[sid].fileName.c_str(), shapes[sid].origVerts);
+                std::snprintf(sLabel, sizeof(sLabel), "#%d - %s",
+                    sid, shapes[sid].fileName.c_str());
                 if (ImGui::Selectable(sLabel, selectedShapeId == sid)) {
                     selectShape(sid);
                 }
@@ -1311,7 +1243,7 @@ public:
 
         // Left Column: Query 3D Viewport + Search Settings
         ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "ACTIVE QUERY SHAPE: #%d (%s)", qShape.id, qShape.className.c_str());
-        ImGui::TextDisabled("File: %s | Orig: %d verts, %d faces", qShape.path.c_str(), qShape.origVerts, qShape.origFaces);
+        ImGui::TextDisabled("File: %s | Mesh: %d verts, %d faces", qShape.path.c_str(), qMeshGL.numVerts, qMeshGL.numFaces);
 
         drawInteractiveViewport(qMeshGL, 500.0f, "QueryVP");
 
@@ -1423,7 +1355,7 @@ public:
         ImGui::NextColumn();
         ImGui::TextDisabled("QUERY PROFILE");
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.35f, 1.0f), "#%d: %s", qShape.id, qShape.className.c_str());
-        ImGui::TextDisabled("%d verts | %d faces", qShape.origVerts, qShape.origFaces);
+        ImGui::TextDisabled("%d verts | %d faces", qMeshGL.numVerts, qMeshGL.numFaces);
 
         // Metric 4: Distance Spread
         ImGui::NextColumn();
@@ -1783,45 +1715,50 @@ public:
 
         // Live Mesh Telemetry Table
         ImGui::Spacing();
-        if (ImGui::BeginTable("MeshStatsTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+        if (ImGui::BeginTable("MeshStatsTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("Property");
-            ImGui::TableSetupColumn("Original (CSV)");
-            ImGui::TableSetupColumn("Normalized (CSV)");
-            ImGui::TableSetupColumn("Current 3D Mesh (Live)");
+            ImGui::TableSetupColumn("Initial Mesh (Loaded from OFF)");
+            ImGui::TableSetupColumn("Current 3D Mesh (Live in Lab)");
             ImGui::TableHeadersRow();
 
             Point3 curScale = labMesh.maxPoint - labMesh.minPoint;
+            float curBaryDist = static_cast<float>(std::sqrt(labMesh.barycenter.x()*labMesh.barycenter.x() + labMesh.barycenter.y()*labMesh.barycenter.y() + labMesh.barycenter.z()*labMesh.barycenter.z()));
+            float curMaxScale = static_cast<float>(std::max({ curScale.x(), curScale.y(), curScale.z() }));
+
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Vertices");
-            ImGui::TableSetColumnIndex(1); ImGui::Text("%d (%.2f sigma)", rec.origVerts, rec.zVerts);
-            ImGui::TableSetColumnIndex(2); ImGui::Text("%d", rec.normVerts);
-            ImGui::TableSetColumnIndex(3); ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "%d", labMesh.vertsSize());
+            ImGui::TableSetColumnIndex(1); ImGui::Text("%d", labOrigVerts);
+            ImGui::TableSetColumnIndex(2); ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "%d", labMesh.vertsSize());
 
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Faces");
-            ImGui::TableSetColumnIndex(1); ImGui::Text("%d (%.2f sigma)", rec.origFaces, rec.zFaces);
-            ImGui::TableSetColumnIndex(2); ImGui::Text("%d", rec.normFaces);
-            ImGui::TableSetColumnIndex(3); ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "%d", labMesh.primsSize());
+            ImGui::TableSetColumnIndex(1); ImGui::Text("%d", labOrigFaces);
+            ImGui::TableSetColumnIndex(2); ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "%d", labMesh.primsSize());
 
             ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0); ImGui::Text("Barycenter (X,Y,Z)");
-            ImGui::TableSetColumnIndex(1); ImGui::Text("|c| = %.3f", rec.preNormBaryDist);
-            ImGui::TableSetColumnIndex(2); ImGui::Text("(%.1e, %.1e, %.1e)", rec.normBaryX, rec.normBaryY, rec.normBaryZ);
-            ImGui::TableSetColumnIndex(3); ImGui::Text("(%.3f, %.3f, %.3f)", labMesh.barycenter.x(), labMesh.barycenter.y(), labMesh.barycenter.z());
+            ImGui::TableSetColumnIndex(0); ImGui::Text("Barycenter Distance (|c|)");
+            ImGui::TableSetColumnIndex(1); ImGui::Text("%.3f", labOrigBaryDist);
+            ImGui::TableSetColumnIndex(2); ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "%.2e (target < 1e-6)", curBaryDist);
 
             ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0); ImGui::Text("AABB Extents (X,Y,Z)");
-            ImGui::TableSetColumnIndex(1); ImGui::Text("Max = %.3f", rec.preNormMaxScale);
-            ImGui::TableSetColumnIndex(2); ImGui::Text("(%.2f, %.2f, %.2f)", rec.normScaleX, rec.normScaleY, rec.normScaleZ);
-            ImGui::TableSetColumnIndex(3); ImGui::Text("(%.3f, %.3f, %.3f)", curScale.x(), curScale.y(), curScale.z());
+            ImGui::TableSetColumnIndex(0); ImGui::Text("Max Bounding Box Extent");
+            ImGui::TableSetColumnIndex(1); ImGui::Text("%.3f", labOrigMaxScale);
+            ImGui::TableSetColumnIndex(2); ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "%.3f (target = 1.0)", curMaxScale);
 
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Surface Area / Volume");
-            ImGui::TableSetColumnIndex(1); ImGui::Text("-");
-            ImGui::TableSetColumnIndex(2); ImGui::Text("A=%.3f | V=%.4f", rec.normArea, rec.normVolume);
-            ImGui::TableSetColumnIndex(3); ImGui::Text("A=%.3f | V=%.4f", labMesh.area, labMesh.volume);
+            ImGui::TableSetColumnIndex(1); ImGui::Text("A=%.3f | V=%.4f", labOrigArea, labOrigVolume);
+            ImGui::TableSetColumnIndex(2); ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "A=%.3f | V=%.4f", labMesh.area, labMesh.volume);
 
             ImGui::EndTable();
+        }
+
+        if (selectedShapeId >= 0 && selectedShapeId < (int)featRaw.features.size() && featRaw.features[selectedShapeId].size() >= 6) {
+            const auto& r = featRaw.features[selectedShapeId];
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "EXTRACTED RAW FEATURES (#%d):", selectedShapeId);
+            ImGui::Text("Area: %.3f | Compactness: %.3f | Rectangularity: %.3f", r[0], r[1], r[2]);
+            ImGui::Text("Diameter: %.3f | Convexity: %.3f | Eccentricity: %.3f", r[3], r[4], r[5]);
         }
 
         ImGui::EndChild(); // End PreprocLeft
@@ -1837,65 +1774,63 @@ public:
 
         // KPI 1: Dataset Coverage
         ImGui::TextDisabled("DATASET COVERAGE");
-        ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "2,483 Shapes");
-        ImGui::TextDisabled("69 benchmark classes");
+        ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "%d Shapes", (int)shapes.size());
+        ImGui::TextDisabled("%d benchmark classes", (int)classes.size());
 
-        // KPI 2: Vertex Resampling
+        // KPI 2: Feature Space
         ImGui::NextColumn();
-        ImGui::TextDisabled("RESAMPLING BENCHMARK");
-        ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.55f, 1.0f), "%.0f -> %.0f avg", avgOrigVerts, avgResampledVerts);
-        ImGui::TextDisabled("Target: [5,000 - 10,000]");
+        ImGui::TextDisabled("FEATURE EXTRACTION");
+        ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.55f, 1.0f), "%d Features", numFeatures);
+        ImGui::TextDisabled("6 Elem + 5 Hist (x%d)", numHistogramBins);
 
-        // KPI 3: Barycenter & AABB Normalization
+        // KPI 3: Normalization Mode
         ImGui::NextColumn();
-        ImGui::TextDisabled("NORMALIZATION ACCURACY");
-        ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.55f, 1.0f), "Barycenter < 1e-6");
-        ImGui::TextDisabled("Unit Cube Max Dim = 1.0");
+        ImGui::TextDisabled("NORMALIZATION MODE");
+        ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.55f, 1.0f), "Z-Score & Min-Max");
+        ImGui::TextDisabled("Standardized weights.csv");
 
         // KPI 4: Outliers Detected
         ImGui::NextColumn();
-        ImGui::TextDisabled("OUTLIERS (MODE 4)");
+        ImGui::TextDisabled("FEATURE OUTLIERS");
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.35f, 1.0f), "%d High / %d Average", (int)outlierHighVerts.size(), (int)outlierLowVerts.size());
-        ImGui::TextDisabled("Z-score > 3.0 sigma");
+        ImGui::TextDisabled("Z-score > 2.0 sigma");
 
         ImGui::Columns(1);
         ImGui::EndChild();
         ImGui::Spacing();
 
-        ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "DATABASE VERIFICATION (2,483 PRECOMPUTED SHAPES)");
-        ImGui::Text("Average vertex count: %.0f (pre-resampling)  -->  %.0f (post-resampling [5k-10k])",
-            avgOrigVerts, avgResampledVerts);
+        ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "DATASET FEATURE DISTRIBUTIONS (MODE 2 - RAW_FEATURES.CSV)");
         ImGui::Spacing();
 
         ImGui::Columns(2, "PreprocHistCompareCols", false);
 
-        // Left Column: BEFORE Preprocessing
-        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.35f, 1.0f), "BEFORE PREPROCESSING / RESAMPLING:");
-        drawDetailedBarHistogram("HistOrigVerts", "Vertices BEFORE Resampling", "Widely distributed (outliers up to 65k+)",
-            histOrigVertsBins, 0.0f, 30000.0f, "verts", IM_COL32(235, 175, 45, 230));
-        drawDetailedBarHistogram("HistPreBary", "Barycenter Distance BEFORE Translation", "Distance to (0,0,0) before centering",
-            histPreBaryBins, 0.0f, 2.0f, "units", IM_COL32(235, 175, 45, 230));
+        // Left Column: Surface Area & Compactness
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.35f, 1.0f), "SURFACE AREA & COMPACTNESS:");
+        drawDetailedBarHistogram("HistArea", "Surface Area Distribution", "Across all shapes in dataset",
+            histSurfaceAreaBins, 0.0f, 15.0f, "area", IM_COL32(235, 175, 45, 230));
+        drawDetailedBarHistogram("HistComp", "Compactness Distribution", "V / (A^(3/2))",
+            histCompactnessBins, 0.0f, 50.0f, "val", IM_COL32(235, 175, 45, 230));
 
-        // Right Column: AFTER Preprocessing (Utilizes empty top-right space)
+        // Right Column: Diameter & Eccentricity
         ImGui::NextColumn();
-        ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.55f, 1.0f), "AFTER PREPROCESSING / RESAMPLING:");
-        drawDetailedBarHistogram("HistResampledVerts", "Vertices AFTER Resampling", "Target range [5,000 - 10,000]",
-            histResampledVertsBins, 0.0f, 15000.0f, "verts", IM_COL32(65, 215, 130, 230), 5000.0f, 10000.0f);
-        drawDetailedBarHistogram("HistPostScale", "Max AABB Dimension AFTER Scaling", "Scaled to unit cube (target = 1.0)",
-            histPostScaleBins, 0.0f, 1.2f, "max dimension", IM_COL32(65, 215, 130, 230), -1.0f, -1.0f, 1.0f);
+        ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.55f, 1.0f), "DIAMETER & ECCENTRICITY:");
+        drawDetailedBarHistogram("HistDiam", "Diameter Distribution", "Max vertex-to-vertex distance",
+            histDiameterBins, 0.0f, 3.0f, "diam", IM_COL32(65, 215, 130, 230));
+        drawDetailedBarHistogram("HistEcc", "Eccentricity Distribution", "Ratio of largest to smallest eigenvalue",
+            histEccentricityBins, 0.0f, 2.5f, "ecc", IM_COL32(65, 215, 130, 230));
 
         ImGui::Columns(1);
 
         ImGui::Spacing();
         ImGui::Separator();
-        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "OUTLIER DETECTION (MODE 4 - Z-SCORE DEVIATION FROM MEAN)");
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "OUTLIER DETECTION (Z-SCORE DEVIATION FROM FEATURE MEAN)");
         ImGui::TextDisabled("Click 'View 3D' to inspect an outlier directly in the 3D Lab:");
 
         if (ImGui::BeginTable("OutlierTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, 260))) {
             ImGui::TableSetupColumn("Outlier Category");
             ImGui::TableSetupColumn("ID");
             ImGui::TableSetupColumn("Class & File");
-            ImGui::TableSetupColumn("Orig Vertices");
+            ImGui::TableSetupColumn("Extreme Feature");
             ImGui::TableSetupColumn("Z-Score (Sigma)");
             ImGui::TableSetupColumn("Action");
             ImGui::TableHeadersRow();
@@ -1903,11 +1838,11 @@ public:
             for (int i = 0; i < std::min(15, (int)outlierHighVerts.size()); ++i) {
                 int sid = outlierHighVerts[i];
                 ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0); ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "Extreme High (>3s)");
+                ImGui::TableSetColumnIndex(0); ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "Extreme (>2s)");
                 ImGui::TableSetColumnIndex(1); ImGui::Text("#%d", sid);
                 ImGui::TableSetColumnIndex(2); ImGui::Text("%s / %s", shapes[sid].className.c_str(), shapes[sid].fileName.c_str());
-                ImGui::TableSetColumnIndex(3); ImGui::Text("%d v / %d f", shapes[sid].origVerts, shapes[sid].origFaces);
-                ImGui::TableSetColumnIndex(4); ImGui::Text("%.2f sigma", shapes[sid].zVerts);
+                ImGui::TableSetColumnIndex(3); ImGui::Text("%s", shapes[sid].maxZFeatureName.c_str());
+                ImGui::TableSetColumnIndex(4); ImGui::Text("%.2f sigma", shapes[sid].maxZScore);
                 ImGui::TableSetColumnIndex(5);
                 ImGui::PushID(sid + 1000);
                 if (ImGui::SmallButton("View 3D")) selectShape(sid);
@@ -1919,8 +1854,8 @@ public:
                 ImGui::TableSetColumnIndex(0); ImGui::TextColored(ImVec4(0.4f, 0.95f, 0.5f, 1.0f), "Closest to Mean");
                 ImGui::TableSetColumnIndex(1); ImGui::Text("#%d", sid);
                 ImGui::TableSetColumnIndex(2); ImGui::Text("%s / %s", shapes[sid].className.c_str(), shapes[sid].fileName.c_str());
-                ImGui::TableSetColumnIndex(3); ImGui::Text("%d v / %d f", shapes[sid].origVerts, shapes[sid].origFaces);
-                ImGui::TableSetColumnIndex(4); ImGui::Text("%.4f sigma", shapes[sid].zVerts);
+                ImGui::TableSetColumnIndex(3); ImGui::Text("%s", shapes[sid].maxZFeatureName.c_str());
+                ImGui::TableSetColumnIndex(4); ImGui::Text("%.4f sigma", shapes[sid].maxZScore);
                 ImGui::TableSetColumnIndex(5);
                 ImGui::PushID(sid + 2000);
                 if (ImGui::SmallButton("View 3D")) selectShape(sid);
@@ -2325,11 +2260,29 @@ public:
         ImGui::Columns(2, "EvalCols", true);
         ImGui::SetColumnWidth(0, std::max(600.0f, ImGui::GetWindowWidth() * 0.46f));
 
-        ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "SYSTEM EVALUATION & ROC-AUC CURVES (MODE 6 - PRECOMPUTED)");
-        ImGui::Checkbox("Standardized Linear (AUC 0.7820)", &showEvalStd); ImGui::SameLine();
-        ImGui::Checkbox("Improved Matching (AUC 0.7905)", &showEvalImp);
-        ImGui::Checkbox("ANN kd-Tree (AUC 0.8033)", &showEvalAnn); ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "SYSTEM EVALUATION & ROC-AUC CURVES (MODE 6)");
+
+        if (!evalStd.points.empty()) {
+            char stdLbl[64];
+            std::snprintf(stdLbl, sizeof(stdLbl), "Standardized Linear (AUC %.4f)", evalStd.auc);
+            ImGui::Checkbox(stdLbl, &showEvalStd);
+            ImGui::SameLine();
+        }
+
+        if (!evalAnn.points.empty()) {
+            char annLbl[64];
+            std::snprintf(annLbl, sizeof(annLbl), "ANN kd-Tree (AUC %.4f)", evalAnn.auc);
+            ImGui::Checkbox(annLbl, &showEvalAnn);
+            ImGui::SameLine();
+        }
+
         ImGui::Checkbox("Selected Class Curve", &showEvalSelectedClass);
+
+        if (evalStd.points.empty() && evalAnn.points.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.35f, 1.0f),
+                "No evaluation data found yet. Run Evaluation Mode (Option 6 in main menu) to generate %s / %s.",
+                evalLinearFilePath.string().c_str(), evalANNFilePath.string().c_str());
+        }
 
         ImGui::Text("X-Axis Metric:"); ImGui::SameLine();
         if (ImGui::RadioButton("Specificity (TNR)", !plotStandardROC)) plotStandardROC = false;
@@ -2380,9 +2333,8 @@ public:
             }
         };
 
-        if (showEvalStd) drawCurve(evalStd.points, IM_COL32(70, 195, 255, 255), 2.5f);
-        if (showEvalImp) drawCurve(evalImp.points, IM_COL32(85, 240, 130, 255), 2.5f);
-        if (showEvalAnn) drawCurve(evalAnn.points, IM_COL32(255, 165, 55, 255), 2.5f);
+        if (showEvalStd && !evalStd.points.empty()) drawCurve(evalStd.points, IM_COL32(70, 195, 255, 255), 2.5f);
+        if (showEvalAnn && !evalAnn.points.empty()) drawCurve(evalAnn.points, IM_COL32(255, 165, 55, 255), 2.5f);
 
         const std::string& selClassName = classes[selectedClassIdx].name;
         if (showEvalSelectedClass && evalStd.classPoints.count(selClassName)) {
@@ -2394,13 +2346,19 @@ public:
         // Summary Benchmark Metrics Box
         ImGui::Spacing();
         ImGui::BeginChild("EvalSummaryBox", ImVec2(0, 0), true);
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.55f, 1.0f), "SYSTEM BENCHMARK SUMMARY (2,483 MODELS, 69 CLASSES):");
-        ImGui::Bullet(); ImGui::TextWrapped("Global ROC-AUC (Standardized Linear): 0.7820 | After Improvements: 0.7905 | ANN kd-tree: 0.8033");
-        ImGui::Bullet(); ImGui::TextWrapped("Precision@1 (excl. self): 55.05%% (vs. 1.45%% for random guess over 69 classes)");
-        ImGui::Bullet(); ImGui::TextWrapped("Top Performing Classes: Bicycle (AUC 0.9763, 100%% P@1), ComputerKeyboard (AUC 0.9592), Glasses (AUC 0.9495)");
-        ImGui::Bullet(); ImGui::TextWrapped("Selected Class '%s' (%d shapes): AUC Standard = %.4f | AUC Improved = %.4f | AUC ANN = %.4f",
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.55f, 1.0f), "SYSTEM BENCHMARK SUMMARY (%d MODELS, %d CLASSES):", (int)shapes.size(), (int)classes.size());
+        if (!evalStd.points.empty()) {
+            ImGui::Bullet(); ImGui::Text("Global ROC-AUC (Standardized Linear): %.4f (%zu ROC evaluation steps)", evalStd.auc, evalStd.points.size());
+        }
+        if (!evalAnn.points.empty()) {
+            ImGui::Bullet(); ImGui::Text("Global ROC-AUC (ANN kd-tree): %.4f (%zu ROC evaluation steps)", evalAnn.auc, evalAnn.points.size());
+        }
+        if (evalStd.points.empty() && evalAnn.points.empty()) {
+            ImGui::Bullet(); ImGui::TextDisabled("Run Evaluation Mode (Option 6) to compute global and per-class ROC curves.");
+        }
+        ImGui::Bullet(); ImGui::TextWrapped("Selected Class '%s' (%d shapes): AUC Linear = %.4f | AUC ANN = %.4f",
             selClassName.c_str(), classes[selectedClassIdx].count,
-            classes[selectedClassIdx].aucStd, classes[selectedClassIdx].aucImp, classes[selectedClassIdx].aucAnn);
+            classes[selectedClassIdx].aucStd, classes[selectedClassIdx].aucAnn);
         ImGui::EndChild();
 
         // Right Column: Sortable Per-Class AUC Table
@@ -2411,16 +2369,17 @@ public:
         std::vector<int> sortedClassIndices(classes.size());
         for (size_t i = 0; i < classes.size(); ++i) sortedClassIndices[i] = static_cast<int>(i);
         std::sort(sortedClassIndices.begin(), sortedClassIndices.end(), [&](int a, int b) {
-            return classes[a].aucStd > classes[b].aucStd;
+            float aVal = (!evalStd.points.empty()) ? classes[a].aucStd : classes[a].aucAnn;
+            float bVal = (!evalStd.points.empty()) ? classes[b].aucStd : classes[b].aucAnn;
+            return aVal > bVal;
         });
 
-        if (ImGui::BeginTable("PerClassEvalTable", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+        if (ImGui::BeginTable("PerClassEvalTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
             ImGui::TableSetupColumn("Rank", ImGuiTableColumnFlags_WidthFixed, 38.0f);
             ImGui::TableSetupColumn("Class");
             ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 48.0f);
-            ImGui::TableSetupColumn("AUC Linear", ImGuiTableColumnFlags_WidthFixed, 72.0f);
-            ImGui::TableSetupColumn("AUC Impr.", ImGuiTableColumnFlags_WidthFixed, 72.0f);
-            ImGui::TableSetupColumn("AUC ANN", ImGuiTableColumnFlags_WidthFixed, 72.0f);
+            ImGui::TableSetupColumn("AUC Linear", ImGuiTableColumnFlags_WidthFixed, 78.0f);
+            ImGui::TableSetupColumn("AUC ANN", ImGuiTableColumnFlags_WidthFixed, 78.0f);
             ImGui::TableSetupColumn("Demo Action", ImGuiTableColumnFlags_WidthFixed, 85.0f);
             ImGui::TableHeadersRow();
 
@@ -2436,12 +2395,22 @@ public:
                 }
                 ImGui::TableSetColumnIndex(2); ImGui::Text("%d", ci.count);
                 ImGui::TableSetColumnIndex(3);
-                ImVec4 aucCol = (ci.aucStd >= 0.85f) ? ImVec4(0.35f, 0.95f, 0.45f, 1.0f)
-                              : (ci.aucStd < 0.65f ? ImVec4(1.0f, 0.5f, 0.4f, 1.0f) : ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
-                ImGui::TextColored(aucCol, "%.4f", ci.aucStd);
-                ImGui::TableSetColumnIndex(4); ImGui::Text("%.4f", ci.aucImp);
-                ImGui::TableSetColumnIndex(5); ImGui::Text("%.4f", ci.aucAnn);
-                ImGui::TableSetColumnIndex(6);
+                if (!evalStd.points.empty()) {
+                    ImVec4 aucCol = (ci.aucStd >= 0.85f) ? ImVec4(0.35f, 0.95f, 0.45f, 1.0f)
+                                  : (ci.aucStd < 0.65f ? ImVec4(1.0f, 0.5f, 0.4f, 1.0f) : ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+                    ImGui::TextColored(aucCol, "%.4f", ci.aucStd);
+                } else {
+                    ImGui::TextDisabled("-");
+                }
+                ImGui::TableSetColumnIndex(4);
+                if (!evalAnn.points.empty()) {
+                    ImVec4 aucCol = (ci.aucAnn >= 0.85f) ? ImVec4(0.35f, 0.95f, 0.45f, 1.0f)
+                                  : (ci.aucAnn < 0.65f ? ImVec4(1.0f, 0.5f, 0.4f, 1.0f) : ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+                    ImGui::TextColored(aucCol, "%.4f", ci.aucAnn);
+                } else {
+                    ImGui::TextDisabled("-");
+                }
+                ImGui::TableSetColumnIndex(5);
                 ImGui::PushID(cIdx + 4000);
                 if (ImGui::SmallButton("Query Demo")) {
                     selectedClassIdx = cIdx;

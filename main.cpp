@@ -377,26 +377,42 @@ std::vector<Mesh> parseDatabase(fs::path path)
 
     std::cout << "Scanning database files...\n";
 
-    int class_index = 0;
+    std::vector<fs::path> folders;
     for (const auto& folder : fs::directory_iterator(path))
+    {
+        if (folder.is_directory())
+            folders.push_back(folder.path());
+    }
+    std::sort(folders.begin(), folders.end());
+
+    int class_index = 0;
+    for (const auto& folderPath : folders)
     {
         if (class_index >= class_limit)
             break;
 
-        if (!folder.is_directory())
-            continue;
-
         int shape_index = 0;
-        for (const auto& file : fs::directory_iterator(folder.path()))
+        for (const auto& file : fs::directory_iterator(folderPath))
         {
             if (shape_index >= shape_limit)
                 break;
 
-            tasks.push_back({ file.path(), folder.path().filename().string() });
-            shape_index++;
+            if (file.is_regular_file())
+            {
+                std::string ext = file.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                if (ext == ".obj" || ext == ".off")
+                {
+                    tasks.push_back({ file.path(), folderPath.filename().string() });
+                    shape_index++;
+                }
+            }
         }
 
-        class_index++;
+        if (shape_index > 0)
+        {
+            class_index++;
+        }
     }
 
     int total = static_cast<int>(tasks.size());
@@ -950,6 +966,12 @@ void normalizeMeshes(std::vector<Mesh>& meshes)
 std::vector<std::vector<float>> getDataDeviations()
 {
     std::ifstream file(histogramsFilePath);
+    bool usingRaw = false;
+    if (!file.is_open())
+    {
+        file.open(rawFeaturesFilePath);
+        usingRaw = true;
+    }
     std::vector<std::vector<float>> data;
     float sumFaces = 0;
     float sumVerts = 0;
@@ -962,6 +984,7 @@ std::vector<std::vector<float>> getDataDeviations()
         std::getline(file, line); // skip headers
         while (std::getline(file, line))
         {
+            if (line.empty()) continue;
             std::vector<float> row;
             std::stringstream ss(line);
 
@@ -972,17 +995,35 @@ std::vector<std::vector<float>> getDataDeviations()
             f = std::stof(word);
             row.push_back(f);
 
-            // read number of faces for current shape
-            std::getline(ss, word, ';');
-            f = std::stof(word);
-            row.push_back(f);
-            sumFaces += f;
+            if (usingRaw)
+            {
+                // raw_features.csv: Shape id;Class;Surface Area;Compactness;...
+                std::string cls;
+                std::getline(ss, cls, ';'); // skip class
+                std::getline(ss, word, ';'); // Surface Area
+                f = std::stof(word);
+                row.push_back(f);
+                sumFaces += f;
 
-            // read number of vertices for current shape
-            std::getline(ss, word, ';');
-            f = std::stof(word);
-            row.push_back(f);
-            sumVerts += f;
+                std::getline(ss, word, ';'); // Compactness
+                f = std::stof(word);
+                row.push_back(f);
+                sumVerts += f;
+            }
+            else
+            {
+                // read number of faces for current shape
+                std::getline(ss, word, ';');
+                f = std::stof(word);
+                row.push_back(f);
+                sumFaces += f;
+
+                // read number of vertices for current shape
+                std::getline(ss, word, ';');
+                f = std::stof(word);
+                row.push_back(f);
+                sumVerts += f;
+            }
 
             total++;
             data.push_back(row);
@@ -1405,7 +1446,7 @@ int main(int argc, char* argv[])
         featureExtraction(meshes, elem_desc);
         
         // save raw features
-        exportFeaturesToCSV(meshes, elem_desc, "raw_features.csv");
+        exportFeaturesToCSV(meshes, elem_desc, rawFeaturesFilePath.string());
         
         // create and save min-max normalized features
         auto norm_desc = elem_desc;
@@ -1416,6 +1457,10 @@ int main(int argc, char* argv[])
         auto stand_desc = elem_desc;
         standardizeFeatures(stand_desc);
         exportFeaturesToCSV(meshes, stand_desc, fullFeaturesStandFilePath.string());
+
+        // compute and save weights
+        FeatureWeights weights = computeWeightsFromDatabase(stand_desc);
+        saveWeights(weights);
     }
     
     // Histogram mode
@@ -1728,7 +1773,7 @@ int main(int argc, char* argv[])
         }
 
         std::vector<std::pair<float, float>> plot_points;
-        std::vector<std::vector<std::pair<float, float>>> plot_points_per_class(69);
+        std::vector<std::vector<std::pair<float, float>>> plot_points_per_class(obj_counts.size());
 
         // Build k steps (always include N as final point so ROC reaches Sensitivity = 1.0)
         std::vector<int> k_steps;
@@ -1846,23 +1891,15 @@ int main(int argc, char* argv[])
         std::cout << "Evaluation score: " << total_area << "\n";
 
         // Save to CSV
-        std::cout << "Save to CSV file? y/n:\n";
+        std::string defaultStem = (evalMethod == 1) ? evalANNFilePath.stem().string() : evalLinearFilePath.stem().string();
+        std::cout << "Save evaluation results to standard CSV (" << defaultStem << ".csv and " << defaultStem << "_per_class.csv)? (y/n):\n";
         char c;
         std::cin >> c;
 
-        if (c == 'y')
+        if (c == 'y' || c == 'Y')
         {
-            std::cout << "Enter filename:\n";
-            string filename;
-            std::cin >> filename;
-
-            if (filename.size() > 0)
-            {
-                exportEvaluationToCSV(plot_points, total_area, filename);
-                exportEvaluationPerClassToCSV(plot_points_per_class, total_area_per_class, database.labels, obj_counts, filename + "_per_class");
-            }
-                
-            else std::cout << "Cannot save to CSV file.\n";
+            exportEvaluationToCSV(plot_points, total_area, defaultStem);
+            exportEvaluationPerClassToCSV(plot_points_per_class, total_area_per_class, database.labels, obj_counts, defaultStem + "_per_class");
         }
 
         std::cout << "Finished evaluation of system.\n";
@@ -1870,14 +1907,21 @@ int main(int argc, char* argv[])
     // Projection mode
     else if (application_mode == 7)
 	{
-		std::cout << "\n=== Mode 6: 2D t-SNE Projection & Scatterplot ===\n";
+		std::cout << "\n=== Mode 7: 2D t-SNE Projection & Scatterplot ===\n";
 		std::vector<double> dummy;
 		FeatureData featureData = promptNormOrStandFeatures(dummy);
 
-		auto points = Projection::getOrComputeEmbedding(featureData.features, featureData.labels, "tsne_embedding.csv");
+		auto points = Projection::getOrComputeEmbedding(featureData.features, featureData.labels, tsneEmbeddingFilePath.string());
 		if (!points.empty())
 		{
-			Projection::runScatterplot(points, paths);
+			if (argc > 2 && std::string(argv[2]) == "--no-gui")
+			{
+				std::cout << "t-SNE embedding generated and cached to " << tsneEmbeddingFilePath.string() << " successfully.\n";
+			}
+			else
+			{
+				Projection::runScatterplot(points, paths);
+			}
 		}
 	}
 	
