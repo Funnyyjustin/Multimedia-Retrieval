@@ -786,7 +786,7 @@ public:
 
     void preloadThumbnails() {
         std::vector<int> neededIds;
-        if (normMeshCache.find(selectedShapeId) == normMeshCache.end()) {
+        if (selectedShapeId >= 0 && normMeshCache.find(selectedShapeId) == normMeshCache.end()) {
             neededIds.push_back(selectedShapeId);
         }
         int numThumbs = std::min((int)queryResults.size(), MAX_THUMB_FBOS);
@@ -1611,6 +1611,11 @@ public:
     // TAB 2: 3D PREPROCESSING, RESAMPLING & NORMALIZATION LAB (MODE 1, 2 & 4)
     // ========================================================================
     void drawTabPreprocessingLab() {
+        if (shapes.empty() || selectedShapeId < 0 || selectedShapeId >= (int)shapes.size()) {
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "No shape selected. Select a shape from the left sidebar or t-SNE plot to inspect.");
+            return;
+        }
+
         if (labLoadedShapeId != selectedShapeId) {
             loadLabMesh(selectedShapeId, true);
         }
@@ -1999,6 +2004,11 @@ public:
     }
 
     void drawTabFeaturesAndHistograms() {
+        if (shapes.empty() || selectedShapeId < 0 || selectedShapeId >= (int)shapes.size()) {
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "No query shape selected. Select a shape from the left sidebar or t-SNE plot to inspect histograms.");
+            return;
+        }
+
         const auto& qShape = shapes[selectedShapeId];
         const auto& cShape = shapes[std::clamp(compareShapeId, 0, (int)shapes.size() - 1)];
 
@@ -2107,10 +2117,18 @@ public:
         ImGui::RadioButton("Selected Class", &tsneFilterMode, 1); ImGui::SameLine();
         ImGui::RadioButton("Highlight Query + Top-K Neighbors", &tsneFilterMode, 2);
 
-        // Row 2: View Controls (Point Radius & Reset View)
+        // Row 2: View Controls (Point Radius & Reset View & Deselect)
         ImGui::SetNextItemWidth(120.0f);
         ImGui::SliderFloat("Point Radius", &tsnePointRadius, 2.0f, 9.0f, "%.1f"); ImGui::SameLine(0, 15);
         if (ImGui::Button("Reset View")) { tsneZoom = 1.0f; tsnePan = ImVec2(0, 0); }
+        if (selectedShapeId >= 0) {
+            ImGui::SameLine(0, 10);
+            if (ImGui::Button("Deselect Point")) {
+                selectedShapeId = -1;
+                queryResults.clear();
+                tsneFilterMode = 0; // Show all 69 classes
+            }
+        }
 
         ImVec2 canvasPos = ImGui::GetCursorScreenPos();
         ImVec2 canvasSize = ImGui::GetContentRegionAvail();
@@ -2211,43 +2229,64 @@ public:
                 if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
                     selectShape(bestHoverId);
                 }
+            } else {
+                tsneHoveredShapeId = -1;
+                // Click on an empty area (without dragging): deselect point and reset filter to show full plot
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0f)) {
+                    selectedShapeId = -1;
+                    queryResults.clear();
+                    tsneFilterMode = 0; // Show all 69 classes
+                }
             }
+        } else {
+            tsneHoveredShapeId = -1;
         }
 
         // Right Column: Live 3D Brushing Preview & Neighbor List
         ImGui::NextColumn();
         int previewId = (tsneHoveredShapeId >= 0) ? tsneHoveredShapeId : selectedShapeId;
-        const auto& pShape = shapes[previewId];
-        const auto& pMeshGL = getOrLoadNormMesh(previewId);
+        if (previewId >= 0 && previewId < (int)shapes.size()) {
+            const auto& pShape = shapes[previewId];
+            const auto& pMeshGL = getOrLoadNormMesh(previewId);
 
-        ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.35f, 1.0f),
-            "3D BRUSHING PREVIEW: #%d (%s)", pShape.id, pShape.className.c_str());
-        ImGui::TextDisabled("File: %s", pShape.path.c_str());
+            ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.35f, 1.0f),
+                "3D BRUSHING PREVIEW: #%d (%s)", pShape.id, pShape.className.c_str());
+            ImGui::TextDisabled("File: %s", pShape.path.c_str());
 
-        drawInteractiveViewport(pMeshGL, 280.0f, "TsneVP");
+            drawInteractiveViewport(pMeshGL, 280.0f, "TsneVP");
+        } else {
+            ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "3D BRUSHING PREVIEW:");
+            ImGui::TextDisabled("Click or hover any point in the scatterplot to preview its 3D mesh.");
+            ImGui::Dummy(ImVec2(0.0f, 280.0f));
+        }
 
         ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "QUERY & TOP-K RETRIEVED NEIGHBORS IN t-SNE SPACE:");
-        ImGui::TextWrapped("Green lines in the t-SNE scatterplot connect the selected query shape (#%d, %s) to retrieved neighbors of the same class; red lines connect to different classes.",
-            selectedShapeId, shapes[selectedShapeId].className.c_str());
+        if (selectedShapeId >= 0 && selectedShapeId < (int)shapes.size()) {
+            ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "QUERY & TOP-K RETRIEVED NEIGHBORS IN t-SNE SPACE:");
+            ImGui::TextWrapped("Green lines in the t-SNE scatterplot connect the selected query shape (#%d, %s) to retrieved neighbors of the same class; red lines connect to different classes.",
+                selectedShapeId, shapes[selectedShapeId].className.c_str());
 
-        if (ImGui::BeginTable("TsneNeighbors", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
-            ImGui::TableSetupColumn("Rank", ImGuiTableColumnFlags_WidthFixed, 40.0f);
-            ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 45.0f);
-            ImGui::TableSetupColumn("Class");
-            ImGui::TableSetupColumn("Distance d", ImGuiTableColumnFlags_WidthFixed, 68.0f);
-            ImGui::TableHeadersRow();
-            for (size_t i = 0; i < queryResults.size(); ++i) {
-                const auto& r = queryResults[i];
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0); ImGui::Text("#%d", (int)i + 1);
-                ImGui::TableSetColumnIndex(1); ImGui::Text("%d", r.shapeId);
-                ImGui::TableSetColumnIndex(2);
-                ImVec4 col = r.sameClass ? ImVec4(0.35f, 0.95f, 0.45f, 1.0f) : ImVec4(1.0f, 0.45f, 0.4f, 1.0f);
-                ImGui::TextColored(col, "%s", shapes[r.shapeId].className.c_str());
-                ImGui::TableSetColumnIndex(3); ImGui::Text("%.4f", r.totalDist);
+            if (ImGui::BeginTable("TsneNeighbors", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+                ImGui::TableSetupColumn("Rank", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+                ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 45.0f);
+                ImGui::TableSetupColumn("Class");
+                ImGui::TableSetupColumn("Distance d", ImGuiTableColumnFlags_WidthFixed, 68.0f);
+                ImGui::TableHeadersRow();
+                for (size_t i = 0; i < queryResults.size(); ++i) {
+                    const auto& r = queryResults[i];
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0); ImGui::Text("#%d", (int)i + 1);
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%d", r.shapeId);
+                    ImGui::TableSetColumnIndex(2);
+                    ImVec4 col = r.sameClass ? ImVec4(0.35f, 0.95f, 0.45f, 1.0f) : ImVec4(1.0f, 0.45f, 0.4f, 1.0f);
+                    ImGui::TextColored(col, "%s", shapes[r.shapeId].className.c_str());
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%.4f", r.totalDist);
+                }
+                ImGui::EndTable();
             }
-            ImGui::EndTable();
+        } else {
+            ImGui::TextColored(ImVec4(0.5f, 0.7f, 0.85f, 1.0f), "QUERY & RETRIEVED NEIGHBORS:");
+            ImGui::TextDisabled("No point currently selected. Click on any point to select as query, or click empty space to deselect.");
         }
 
         ImGui::Columns(1);
