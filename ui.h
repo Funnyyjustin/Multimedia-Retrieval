@@ -717,7 +717,7 @@ private:
     }
 
     void loadEvaluations() {
-        evalStd = parseEvalCSV("evaluation.csv", "evaluation_per_class.csv", "Standardized Linear Search");
+        evalStd = parseEvalCSV("eval_linear.csv", "eval_linear_per_class.csv", "Standardized Linear Search");
         evalImp = parseEvalCSV("Eval_after_improvements.csv", "Eval_after_improvements_per_class.csv", "After Improvements (Step k=10)");
         evalAnn = parseEvalCSV("eval_ANN.csv", "eval_ANN_per_class.csv", "ANN kd-Tree (Hellinger Embedding)");
 
