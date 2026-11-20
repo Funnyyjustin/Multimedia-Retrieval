@@ -63,7 +63,10 @@ std::vector<int> makeidpathcsv()
                 }
             }
         }
-        counts.push_back(count);
+        if (count > 0)
+        {
+            counts.push_back(count);
+        }
     }
 
     file.close();

@@ -2,41 +2,7 @@
 #include <vector>
 #include <string>
 
-void saveWeights(const FeatureWeights& weights)
-{
-	std::ofstream file(weightsFilePath);
-	if (!file.is_open())
-	{
-		std::cerr << "Error: Could not open file " << weightsFilePath.string() << " for writing.\n";
-		return;
-	}
-	for (size_t g = 0; g < NUM_GROUPS; g++)
-	{
-		file << weights[g];
-		if (g < NUM_GROUPS - 1)
-			file << ";";
-	}
-	file << "\n";
-	file.close();
-}
 
-std::array<double, NUM_GROUPS> readWeights()
-{
-	std::array<double, NUM_GROUPS> weights;
-	std::ifstream file(weightsFilePath);
-	if (!file.is_open())
-	{
-		std::cerr << "Error: Could not open file " << weightsFilePath.string() << " for reading.\n";
-	}
-	for (size_t g = 0; g < NUM_GROUPS; g++)
-	{
-		file >> weights[g];
-		if (g < NUM_GROUPS - 1)
-			file.ignore();
-	}
-	file.close();
-	return weights;
-}
 
 void scoreMatching(
 	std::vector<std::string>& paths, 

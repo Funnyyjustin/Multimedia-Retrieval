@@ -121,4 +121,12 @@ inline void processCameraKeyboard(GLFWwindow* window, float deltaTime)
         cameraTarget += camUp * speed;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
         cameraTarget -= camUp * speed;
+    if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS)
+    {
+        cameraDistance = 2.0f;
+        cameraYaw = 0.0f;
+        cameraPitch = 0.0f;
+        cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+    }
 }
+

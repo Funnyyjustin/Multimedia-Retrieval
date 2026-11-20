@@ -430,9 +430,9 @@ static std::map<std::string, double> getCrossDatasetMeshStatsMax() {
     cachedMax["Face type"] = 1.0;
 
     std::vector<std::string> candidateFiles = {
-        "histograms.csv",
-        "full_features_1.csv",
-        "full_features_2.csv"
+        rawFeaturesFilePath.string(),
+        fullFeaturesStandFilePath.string(),
+        fullFeaturesNormFilePath.string()
     };
 
     for (const auto& fn : candidateFiles) {
@@ -891,7 +891,7 @@ void runHistogramMode() {
     std::filesystem::create_directories("images");
 
     std::cout << "\n=== HISTOGRAM & FEATURE EXPORT MODE ===\n";
-    std::cout << "Enter CSV filename or path (e.g. histograms.csv, full_featuress_3.csv, full_features_1.csv, full_features_2.csv): ";
+    std::cout << "Enter CSV filename or path (default: " << rawFeaturesFilePath.string() << "): ";
     std::string csvPath;
     std::cin >> csvPath;
 
@@ -899,20 +899,20 @@ void runHistogramMode() {
         csvPath = csvPath.substr(1, csvPath.size() - 2);
     }
 
+    if (csvPath.empty()) {
+        csvPath = rawFeaturesFilePath.string();
+    }
+
     // Smart file path resolution
     if (!std::filesystem::exists(csvPath)) {
         if (std::filesystem::exists(csvPath + ".csv")) {
             csvPath = csvPath + ".csv";
-        } else if (csvPath == "histograms" || csvPath == "histogram") {
-            if (std::filesystem::exists("histograms.csv")) {
-                csvPath = "histograms.csv";
-            }
-        } else if (csvPath == "full_features_3" || csvPath == "full_features_3.csv") {
-            if (std::filesystem::exists("full_featuress_3.csv")) {
-                csvPath = "full_featuress_3.csv";
-            }
-        } else if (csvPath == "full_featuress_3" && std::filesystem::exists("full_featuress_3.csv")) {
-            csvPath = "full_featuress_3.csv";
+        } else if (std::filesystem::exists(rawFeaturesFilePath)) {
+            csvPath = rawFeaturesFilePath.string();
+        } else if (std::filesystem::exists(fullFeaturesStandFilePath)) {
+            csvPath = fullFeaturesStandFilePath.string();
+        } else if (std::filesystem::exists(fullFeaturesNormFilePath)) {
+            csvPath = fullFeaturesNormFilePath.string();
         }
     }
 
@@ -925,13 +925,13 @@ void runHistogramMode() {
 
     std::string fileStem = std::filesystem::path(csvPath).stem().string();
 
-    // If file has no class column (e.g. histograms.csv, full_features_1.csv or full_features_2.csv)
+    // If file has no class column, check standard feature file as reference
     if (!db.hasClasses) {
         std::string refClassPath = "";
-        if (std::filesystem::exists("full_featuress_3.csv")) {
-            refClassPath = "full_featuress_3.csv";
-        } else if (std::filesystem::exists("full_features_3.csv")) {
-            refClassPath = "full_features_3.csv";
+        if (std::filesystem::exists(rawFeaturesFilePath)) {
+            refClassPath = rawFeaturesFilePath.string();
+        } else if (std::filesystem::exists(fullFeaturesStandFilePath)) {
+            refClassPath = fullFeaturesStandFilePath.string();
         }
 
         std::cout << "\nLoaded " << csvPath << " with " << db.allShapes.size() 

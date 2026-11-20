@@ -69,86 +69,42 @@ FeatureData readFeatures(fs::path filePath)
 	return FeatureData{ labels, features };
 }
 
-FeatureData promptNormOrStandFeatures(std::vector<double>& queryFeatures)
+inline double histogramEMD(const std::vector<double>& a, const std::vector<double>& b,
+	int start, int bins)
 {
-	std::cout << "Type 1 to match with normalized features, 2 to match with standardized features: ";
-	int choice;
-	std::cin >> choice;
-
-	if (choice == 1)
-	{
-		NormalizationData normData = readNormalizationData(normalizationDataFilePath.string());
-		normalizeWithData(queryFeatures, normData);
-		return readFeatures(fullFeaturesNormFilePath);
-	}
-	else if (choice == 2)
-	{
-		StandardizationData stdData = readStandardizationData(standardizationDataFilePath.string());
-		standardizeWithData(queryFeatures, stdData);
-		normalizeHistogram(queryFeatures);
-		return readFeatures(fullFeaturesStandFilePath);
-	}
-	else
-	{
-		std::cout << "Invalid input.\n";
-		return promptNormOrStandFeatures(queryFeatures);
-	}
-}
-
-// Non-negative masses from the standardized single features, normalized to sum 1
-inline std::array<double, numSingleFeatures> singleMasses(const std::vector<double>& v)
-{
-	std::array<double, numSingleFeatures> m{};
-	double total = 0.0;
-	for (int i = 0; i < numSingleFeatures; i++)
-	{
-		m[i] = std::max(v[i] + SINGLE_MASS_SHIFT, 0.0);
-		total += m[i];
-	}
-	if (total > 1e-9)
-		for (double& x : m) x /= total;
-	return m;
-}
-
-// EMD over all single-value features together (1D ground distance |i-j|, equal total mass)
-inline double singleFeaturesEMD(const std::vector<double>& a, const std::vector<double>& b)
-{
-	auto ma = singleMasses(a);
-	auto mb = singleMasses(b);
 	double cumA = 0.0, cumB = 0.0, work = 0.0;
-	for (int i = 0; i < numSingleFeatures; i++)
+	for (int i = start; i < start + bins; i++)
 	{
-		cumA += ma[i];
-		cumB += mb[i];
-		work += std::fabs(cumA - cumB);
+		cumA += a[i];
+		cumB += b[i];
+		work += std::fabs(cumA - cumB);   // mass crossing the boundary after bin i
 	}
 	return work;
 }
 
-// Histogram matching (slide): d(H1,H2) = sqrt( sum_i |H1[i]-H2[i]|^2 )
-inline double histogramDistance(const std::vector<double>& a, const std::vector<double>& b,
-	int start, int bins)
+float distanceLp(std::vector<double> feature, std::vector<double> query)
 {
-	double sq = 0.0;
-	for (int i = start; i < start + bins; i++)
+	double p = 2;
+	double sum = 0;
+	for (int i = 0; i < feature.size(); i++)
 	{
-		double diff = a[i] - b[i];
-		sq += diff * diff;
+		sum += pow(fabs(feature[i] - query[i]), p);
 	}
-	return std::sqrt(sq);
+
+	return pow(sum, 1.0 / p);
 }
 
-inline std::array<double, NUM_GROUPS> groupDistances(
+std::array<double, NUM_GROUPS> groupDistances(
 	const std::vector<double>& a, const std::vector<double>& b)
 {
 	std::array<double, NUM_GROUPS> d{};
-	d[0] = singleFeaturesEMD(a, b);                              // group 0: all single features
+	d[0] = distanceLp(a, b);                              // group 0: all single features
 	int minLen = static_cast<int>(std::min(a.size(), b.size()));
 	int histBins = (minLen > numSingleFeatures) ? (minLen - numSingleFeatures) / numHistograms : numHistogramBins;
 	for (int h = 0; h < numHistograms; h++)
 	{
 		int start = numSingleFeatures + h * histBins;
-		d[NUM_SINGLE_GROUPS + h] = histogramDistance(a, b, start, histBins);
+		d[NUM_SINGLE_GROUPS + h] = histogramEMD(a, b, start, histBins);
 	}
 	return d;
 }
@@ -164,8 +120,8 @@ inline double weightedDistance(const std::vector<double>& a,
 	const std::vector<double>& b,
 	const FeatureWeights& w)
 {
+	double p = 2.0;
 	auto d = groupDistances(a, b);
-	double p = 1;
 	double total = 0.0;
 	for (size_t g = 0; g < NUM_SINGLE_GROUPS; g++)
 		total += w[g] * pow(d[g], p);
@@ -174,6 +130,42 @@ inline double weightedDistance(const std::vector<double>& a,
 	for (size_t g = NUM_SINGLE_GROUPS; g < NUM_GROUPS; g++)
 		total += w[g] * d[g];
 	return total;
+}
+
+void saveWeights(const FeatureWeights& weights)
+{
+	std::ofstream file(weightsFilePath);
+	if (!file.is_open())
+	{
+		std::cerr << "Error: Could not open file " << weightsFilePath.string() << " for writing.\n";
+		return;
+	}
+	for (size_t g = 0; g < NUM_GROUPS; g++)
+	{
+		file << weights[g];
+		if (g < NUM_GROUPS - 1)
+			file << ";";
+	}
+	file << "\n";
+	file.close();
+}
+
+std::array<double, NUM_GROUPS> readWeights()
+{
+	std::array<double, NUM_GROUPS> weights;
+	std::ifstream file(weightsFilePath);
+	if (!file.is_open())
+	{
+		std::cerr << "Error: Could not open file " << weightsFilePath.string() << " for reading.\n";
+	}
+	for (size_t g = 0; g < NUM_GROUPS; g++)
+	{
+		file >> weights[g];
+		if (g < NUM_GROUPS - 1)
+			file.ignore();
+	}
+	file.close();
+	return weights;
 }
 
 // Weight each group inversely to its mean distance over the database
@@ -254,16 +246,30 @@ inline std::vector<double> embedFeatureForANN(
 
 
 // Redundant
-float DistanceLp(std::vector<double> feature, std::vector<double> query)
+FeatureData promptNormOrStandFeatures(std::vector<double>& queryFeatures)
 {
-	double p = 2;
-	double sum = 0;
-	for (int i = 0; i < feature.size(); i++)
-	{
-		sum += pow(fabs(feature[i] - query[i]), p);
-	}
+	std::cout << "Type 1 to match with normalized features, 2 to match with standardized features: ";
+	int choice;
+	std::cin >> choice;
 
-	return pow(sum, 1.0 / p);
+	if (choice == 1)
+	{
+		NormalizationData normData = readNormalizationData(normalizationDataFilePath.string());
+		normalizeWithData(queryFeatures, normData);
+		return readFeatures(fullFeaturesNormFilePath);
+	}
+	else if (choice == 2)
+	{
+		StandardizationData stdData = readStandardizationData(standardizationDataFilePath.string());
+		standardizeWithData(queryFeatures, stdData);
+		normalizeHistogram(queryFeatures);
+		return readFeatures(fullFeaturesStandFilePath);
+	}
+	else
+	{
+		std::cout << "Invalid input.\n";
+		return promptNormOrStandFeatures(queryFeatures);
+	}
 }
 
 std::vector<std::vector<float>> makeDistanceVector(const std::vector<std::vector<double>>& features, std::vector<double> query)
@@ -271,12 +277,9 @@ std::vector<std::vector<float>> makeDistanceVector(const std::vector<std::vector
 	std::vector<std::vector<float>> distances;
 	for (float i = 0; i < features.size(); i++)
 	{
-		std::vector<float> elem = { i, DistanceLp(features[i], query) };
+		std::vector<float> elem = { i, distanceLp(features[i], query) };
 		distances.push_back(elem);
 	}
 
 	return distances;
 }
-
-
-//
