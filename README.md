@@ -1,17 +1,16 @@
 # Multimedia Retrieval
 
 This repository contains a project for the course INFOMR Multimedia Retrieval from Utrecht University.
-We use openGL
 
 ## How to compile and run
-Clone or download this repository and open the solution "Multimedia Retrieval.sln" in an IDE (e.g. Visual Studio Community).
-After opening the solution, build and run the solution. A console window should open prompting you to choose one of several modes.
+Clone or download this repository and open the solution "Multimedia Retrieval.sln" in an IDE (e.g. Visual Studio Community). 
+If, after opening the solution, it still shows other solutions in the explorer in the IDE, select "Multimedia Retrieval.sln" from that list. Then build and run the solution. A console window should open prompting you to choose one of several modes.
 
 ## How to use
-The console window will prompt you with a couple options, for manual querying, select 5. for the showcase from the presentations, select either 0 or 8.
+The console window will prompt you with a couple options. For manual querying, select 5. For the showcase from the presentations, select either 0 or 8.
 
 ## How to use showcase application
-After selecting 8 or 0, a window will open. On the left you can select classes and objects. The classes can be ordered by Name or AUC. 
+After selecting 0 or 8, a window will open. On the left you can select classes and objects. The classes can be ordered by Name or AUC. 
 At the top there are 5 tabs: 
 1. 3D Query Studio: Select an object on the left and it will query that object.
 2. 3D Preprocessing & Outliers: shows histograms with some processing data and a table with outliers in the bottom-right.
